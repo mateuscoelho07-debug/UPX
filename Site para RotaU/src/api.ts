@@ -1,4 +1,4 @@
-// Cliente da API do RotaU (ver server/index.js).
+// Cliente da API do RotaU (ver server/index.ts).
 // Em desenvolvimento o Vite encaminha /api para o servidor na porta 3001.
 const API_URL = import.meta.env.VITE_API_URL ?? "/api";
 

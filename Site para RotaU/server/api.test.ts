@@ -1,21 +1,23 @@
 // Testes da API: `pnpm test:api`
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createApp } from "./index.js";
-import { openDatabase } from "./db.js";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp } from "./index.ts";
+import { openDatabase } from "./db.ts";
 
-let server;
-let base;
+let server: Server;
+let base: string;
 
 before(async () => {
   server = createApp(openDatabase(":memory:")).listen(0);
   await new Promise((resolve) => server.once("listening", resolve));
-  base = `http://localhost:${server.address().port}/api`;
+  base = `http://localhost:${(server.address() as AddressInfo).port}/api`;
 });
 
 after(() => server.close());
 
-async function call(method, url, body) {
+async function call(method: string, url: string, body?: unknown): Promise<{ status: number; body: any }> {
   const res = await fetch(base + url, {
     method,
     headers: { "Content-Type": "application/json" },
@@ -27,7 +29,7 @@ async function call(method, url, body) {
 test("lista as faculdades do seed", async () => {
   const { status, body } = await call("GET", "/colleges");
   assert.equal(status, 200);
-  assert.deepEqual(body.map((c) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
+  assert.deepEqual(body.map((c: { name: string }) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
 });
 
 test("busca registra a pesquisa e conta as vans", async () => {
@@ -56,7 +58,7 @@ test("fluxo completo: estudante reserva e motorista confirma", async () => {
   assert.equal(duplicate.status, 409);
 
   const vans = await call("GET", `/vans?studentId=${student.body.id}`);
-  const van = vans.body.find((v) => v.id === driver.body.id);
+  const van = vans.body.find((v: { id: number }) => v.id === driver.body.id);
   assert.equal(van.route, "Votorantim → Ufscar");
   assert.equal(van.freeSeats, 1);
 

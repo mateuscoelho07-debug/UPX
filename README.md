@@ -4,7 +4,7 @@ O RotaU conecta estudantes a motoristas de vans universitárias. O site fica em 
 
 ## Como rodar
 
-Requer Node.js 22.13 ou mais novo (o banco usa o SQLite embutido no Node) e pnpm.
+Requer Node.js 22.18 ou mais novo (o banco usa o SQLite embutido no Node e a API é escrita em TypeScript, executado direto pelo Node) e pnpm.
 
 ```bash
 cd "Site para RotaU"
@@ -17,6 +17,7 @@ Outros comandos:
 - `pnpm server`: só a API.
 - `pnpm start`: compila o site e serve site + API juntos na porta 3001 (modo produção).
 - `pnpm test:api`: testes da API.
+- `pnpm typecheck`: verificação de tipos do site e da API.
 
 O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `API_PORT` (porta da API) e `SEED=false` (não criar dados de exemplo).
 
