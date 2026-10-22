@@ -14,7 +14,7 @@ pnpm dev        # sobe a API (porta 3001) e o site (porta 8443) juntos
 
 Outros comandos:
 
-- `pnpm server`: só a API.
+- `pnpm api`: só a API.
 - `pnpm start`: compila o site e serve site + API juntos na porta 3001 (modo produção).
 - `pnpm test:api`: testes da API.
 - `pnpm typecheck`: verificação de tipos do site e da API.
