@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"pnpm server\" \"vite\"",
+    "dev": "concurrently -k -n api,web -c blue,green \"pnpm run api\" \"pnpm run dev:web\"",
     "dev:web": "vite",
-    "server": "node --experimental-strip-types --no-warnings server/index.ts",
+    "api": "node --experimental-strip-types --no-warnings server/index.ts",
     "start": "vite build && node --experimental-strip-types --no-warnings server/index.ts",
     "build": "vite build",
     "preview": "vite preview",
