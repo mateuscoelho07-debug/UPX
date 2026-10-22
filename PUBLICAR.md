@@ -1,96 +1,86 @@
-# Como publicar o RotaU na internet
+# Como publicar o RotaU de graça (Vercel + Turso)
 
-Este guia mostra, passo a passo, como colocar o site do RotaU no ar usando o **Railway** (railway.com). O Railway lê o código direto do seu GitHub, monta o site sozinho e publica de novo toda vez que você enviar uma mudança para a branch `main`.
+Este guia coloca o RotaU na internet **sem pagar nada**, usando dois serviços:
 
-O site e a API rodam juntos, num único serviço: a API (Express) também entrega as páginas do site. O banco de dados (SQLite) fica guardado num **volume**, que é um disco que não é apagado quando o site é publicado de novo.
+- **Vercel** (vercel.com): hospeda o site e a API. Ele lê o código direto do seu GitHub e publica de novo a cada mudança.
+- **Turso** (turso.tech): guarda o banco de dados. O Turso é um SQLite na nuvem, igual ao banco que você usa no seu computador, só que fica salvo mesmo quando o site é publicado de novo.
+
+Os dois têm plano gratuito, que costuma ser suficiente para um projeto pequeno. Confira os limites atuais nas páginas de preços deles. Hoje o plano gratuito da Vercel (Hobby) é para uso pessoal e sem fins lucrativos; se o RotaU virar um negócio, vale rever isso.
+
+Por que dois serviços? A Vercel apaga qualquer arquivo salvo no servidor entre uma visita e outra, então o banco não pode ficar num arquivo como no seu computador. Por isso o banco fica no Turso.
 
 ## O que já está pronto no repositório
 
-- `Dockerfile`: a "receita" que o Railway usa para compilar o site e ligar a API.
-- `railway.json`: diz ao Railway para usar o `Dockerfile` e qual endereço testar para saber se o site subiu (`/api/health`).
-- `.dockerignore`: arquivos que não precisam ir para o servidor.
+- `Site para RotaU/vercel.json`: diz à Vercel como compilar o site e que as chamadas `/api/...` vão para a API.
+- `Site para RotaU/api/index.ts`: a API do RotaU como função da Vercel.
+- `Site para RotaU/server/db.ts`: usa o banco do Turso quando a variável `DATABASE_URL` existe, e um arquivo local no seu computador quando não existe. Para desenvolver no seu computador, nada muda: `pnpm dev` continua funcionando.
 
 Você não precisa mexer nesses arquivos.
 
-## Quanto custa
+## Passo 1: criar o banco gratuito no Turso
 
-O Railway oferece um período de teste com crédito grátis. Depois disso, o plano mais barato (Hobby) custa cerca de **US$ 5 por mês**, e um site pequeno como o RotaU costuma caber nesse valor. Confira o preço atual em https://railway.com/pricing antes de começar.
+1. Entre em https://turso.tech e clique em **Sign Up**. Escolha entrar com o **GitHub**.
+2. No painel, clique em **Create Database** e dê o nome `rotau`.
+3. Escolha a região mais perto de você (por exemplo, a América do Sul ou a Costa Leste dos EUA) e crie.
+4. Abra o banco criado e copie a **URL**. Ela começa com `libsql://` (exemplo: `libsql://rotau-seunome.turso.io`).
+5. Gere um **token** de acesso (botão **Generate Token** ou **Create Token** na página do banco). Escolha acesso de leitura e escrita, sem validade, e copie o texto grande que aparece. Ele só é mostrado uma vez.
 
-## Passo 1: criar a conta
+Guarde a URL e o token num lugar seguro. O token é como uma senha do banco: nunca coloque no GitHub.
 
-1. Entre em https://railway.com e clique em **Login**.
-2. Escolha **Login with GitHub** e entre com a conta `mateuscoelho07-debug`.
-3. Aceite os termos. Se pedir, confirme o e-mail.
+Não precisa criar tabelas: o RotaU cria tudo sozinho na primeira visita.
 
-## Passo 2: criar o projeto a partir do GitHub
+## Passo 2: criar a conta na Vercel e importar o projeto
 
-1. No painel do Railway, clique em **New Project** (ou **+ New**).
-2. Escolha **Deploy from GitHub repo**.
-3. Se for a primeira vez, clique em **Configure GitHub App** e autorize o Railway a ver o repositório **UPX** (pode escolher "Only select repositories" e marcar só ele).
-4. Selecione o repositório **UPX**.
-5. O Railway encontra o `Dockerfile` sozinho e começa a primeira publicação. Ela pode falhar ou ficar sem banco persistente até você terminar os próximos passos; tudo bem.
+1. Entre em https://vercel.com e clique em **Sign Up**. Escolha o plano **Hobby** (gratuito) e entre com o **GitHub**.
+2. No painel, clique em **Add New → Project**.
+3. Em **Import Git Repository**, clique em **Adjust GitHub App Permissions** se o repositório **UPX** não aparecer, autorize a Vercel nele e depois clique em **Import** ao lado do UPX.
+4. Na tela de configuração, procure **Root Directory** e clique em **Edit**. Escolha a pasta **Site para RotaU** e confirme. **Este passo é essencial**, porque o site fica dentro dessa pasta.
+5. Em **Framework Preset**, deve aparecer **Vite**. Não mude o resto.
 
-## Passo 3: criar o disco do banco de dados (volume)
+## Passo 3: colocar as variáveis (ainda na mesma tela)
 
-Sem este passo, **todos os cadastros são apagados** a cada nova publicação.
-
-1. Dentro do projeto, clique com o botão direito no quadrado do serviço **UPX** (ou aperte `Ctrl + K` / `Cmd + K`) e escolha **Add Volume** / **Attach Volume**.
-2. Em **Mount path**, escreva exatamente: `/data`
-3. Confirme. O Railway vai publicar o site de novo.
-
-O banco fica no arquivo `/data/rotau.db` dentro desse volume.
-
-## Passo 4: configurar as variáveis
-
-1. Clique no serviço **UPX** e abra a aba **Variables**.
-2. Clique em **New Variable** e crie:
+Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 
 | Nome | Valor | Para que serve |
 | --- | --- | --- |
-| `ADMIN_TOKEN` | uma senha forte, inventada por você (ex.: 20 letras e números misturados) | Protege o painel `/admin`. Sem ela, qualquer pessoa vê todos os dados do banco. |
-| `SEED` | `false` | Opcional. Com `false`, o banco começa vazio, sem os motoristas e estudantes de exemplo. Deixe sem essa variável se quiser os exemplos para demonstrar o site. |
+| `DATABASE_URL` | a URL do Turso (`libsql://...`) | Onde o banco está. |
+| `DATABASE_AUTH_TOKEN` | o token do Turso | Senha de acesso ao banco. |
+| `ADMIN_TOKEN` | uma senha forte inventada por você | Protege o painel `/admin`. Sem ela, qualquer pessoa vê todos os dados. |
+| `SEED` | `false` | O banco começa vazio, sem os motoristas e estudantes de exemplo. Se quiser os exemplos para demonstrar o site, não crie esta variável. |
 
-3. Clique em **Deploy** (ou **Apply changes**) para publicar com as variáveis novas.
+Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 
-Não crie a variável `PORT`: o Railway já define a porta sozinho. A variável `DB_PATH` também já vem pronta no `Dockerfile` (`/data/rotau.db`).
+Se o projeto de login com senha já tiver sido juntado ao site, o guia dessa parte (README, seção "Login e segurança") pode pedir variáveis a mais, como `ADMIN_PASSWORD` e `TRUST_PROXY=1`. Crie também essas.
 
-Guarde o `ADMIN_TOKEN` num lugar seguro e nunca coloque essa senha no código ou no GitHub.
+## Passo 4: conferir se funcionou
 
-## Passo 5: ganhar um endereço na internet
+1. Quando a Vercel mostrar **Congratulations**, clique em **Visit** (ou no endereço `rotau-xxxx.vercel.app`).
+2. O site do RotaU deve abrir. Abra também `https://SEU-ENDERECO/api/health`: deve aparecer `{"ok":true}`.
+3. Faça um cadastro de teste. No painel do Turso (aba **Data** do banco), as tabelas `students` e `drivers` devem mostrar o cadastro.
+4. O painel de administração fica em `https://SEU-ENDERECO/admin` e pede a senha configurada.
 
-1. No serviço **UPX**, abra **Settings** e procure a seção **Networking**.
-2. Clique em **Generate Domain**.
-3. O Railway cria um endereço parecido com `upx-production.up.railway.app`. Abra esse endereço no navegador: o site do RotaU deve aparecer.
+## Passo 5 (opcional): domínio próprio
 
-Para conferir se a API está funcionando, abra `https://SEU-ENDERECO/api/health`. Deve aparecer `{"ok":true}`.
-
-O painel de administração fica em `https://SEU-ENDERECO/admin` e pede o `ADMIN_TOKEN`.
-
-## Passo 6 (opcional): usar um domínio próprio, como rotau.com.br
-
-1. Compre o domínio num registrador (para `.com.br`, use https://registro.br).
-2. No Railway, em **Settings → Networking**, clique em **Custom Domain** e digite o domínio (ex.: `www.rotau.com.br`).
-3. O Railway mostra um registro **CNAME** (e às vezes um registro **TXT** de verificação). Copie esses valores.
-4. No site do registrador, abra a configuração de **DNS** do domínio e crie os mesmos registros.
-5. Espere de alguns minutos a algumas horas. Quando o Railway mostrar o domínio como ativo, o site já abre por ele, com cadeado (HTTPS) automático.
+1. Compre o domínio num registrador (para `.com.br`, use https://registro.br). O domínio é a única parte paga.
+2. Na Vercel, abra o projeto, vá em **Settings → Domains**, digite o domínio (ex.: `rotau.com.br`) e clique em **Add**.
+3. A Vercel mostra os registros de DNS que você precisa criar (um **A** e/ou um **CNAME**). Copie esses valores.
+4. No site do registrador, abra a configuração de **DNS** e crie os mesmos registros.
+5. Espere de alguns minutos a algumas horas. Quando a Vercel mostrar o domínio como válido, o site abre por ele, com cadeado (HTTPS) automático.
 
 ## Como atualizar o site depois
 
-Toda vez que uma mudança entrar na branch `main` do GitHub (por exemplo, ao aprovar e juntar um pull request), o Railway publica a nova versão sozinho em poucos minutos. Os dados do banco continuam guardados no volume.
+Toda vez que uma mudança entra na branch `main` do GitHub (por exemplo, ao juntar um pull request), a Vercel publica a nova versão sozinha. Os dados no Turso não são apagados.
 
-Para acompanhar, abra o serviço no Railway e veja a aba **Deployments**. Clique numa publicação e em **View logs** para ver as mensagens do servidor.
-
-## Cópia de segurança do banco
-
-No Railway, clique no volume e procure a aba **Backups** para criar ou agendar cópias. Faça uma cópia antes de mudanças grandes.
+Cada pull request também ganha um endereço de teste próprio na Vercel, útil para ver a mudança antes de juntar. Atenção: esses endereços usam o mesmo banco de produção, a menos que você crie outro banco só para testes e configure as variáveis apenas para o ambiente **Preview**.
 
 ## Se algo der errado
 
-- **A publicação falhou:** abra **Deployments → View logs** e leia as últimas linhas em vermelho. Copie a mensagem e peça ajuda com ela.
-- **O site abre, mas os cadastros somem depois de publicar:** o volume não foi criado ou o caminho não é `/data`. Refaça o Passo 3.
-- **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_TOKEN` não foi criada. Refaça o Passo 4.
-- **"Application failed to respond":** espere um minuto e recarregue. Se continuar, veja os logs.
+- **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
+- **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
+- **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `Site para RotaU` (Passo 2).
+- **O painel `/admin` abre sem pedir senha:** a variável de senha do painel não foi criada. Crie e faça **Redeploy**.
+- **Variáveis novas não têm efeito:** a Vercel só lê variáveis novas em publicações novas. Sempre faça **Redeploy** depois de mudar.
 
-## Outras hospedagens
+## Desenvolvimento no seu computador
 
-O `Dockerfile` funciona em qualquer serviço que aceite Docker (Render, Fly.io e outros). O importante é sempre: montar um disco persistente em `/data` e definir `ADMIN_TOKEN`. A porta vem da variável `PORT`, que esses serviços também definem sozinhos.
+Nada muda: `pnpm dev` na pasta `Site para RotaU` usa um arquivo local (`server/data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.

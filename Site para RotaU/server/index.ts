@@ -5,13 +5,25 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ApiError, openDatabase, type Repository } from "./db.ts";
 
-export function createApp(repo: Repository = openDatabase()) {
+// O banco abre de forma assíncrona; as rotas esperam ele ficar pronto.
+export function createApp(database: Repository | Promise<Repository> = openDatabase()) {
   const app = express();
   app.use(express.json());
-
-  const route = (handler: (req: Request) => unknown): RequestHandler => (req, res, next) => {
+  const ready = Promise.resolve(database);
+  ready.catch(() => {}); // o erro é tratado na primeira chamada à API
+  let repo: Repository;
+  app.use("/api", async (_req, _res, next) => {
     try {
-      const result = handler(req);
+      repo = await ready;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  const route = (handler: (req: Request) => unknown): RequestHandler => async (req, res, next) => {
+    try {
+      const result = await handler(req);
       res.status(req.method === "POST" ? 201 : 200).json(result);
     } catch (error) {
       next(error);
@@ -54,7 +66,7 @@ export function createApp(repo: Repository = openDatabase()) {
       res.status(401).json({ error: "Token de administrador inválido." });
       return;
     }
-    route(() => ({ ...repo.adminOverview(), protected: Boolean(adminToken) }))(req, res, next);
+    route(async () => ({ ...(await repo.adminOverview()), protected: Boolean(adminToken) }))(req, res, next);
   });
 
   app.use("/api", (_req, res) => {
