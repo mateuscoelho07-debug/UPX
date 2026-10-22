@@ -45,6 +45,18 @@ export function createApp(repo: Repository = openDatabase()) {
   app.post("/api/bookings", route((req) => repo.createBooking(body(req))));
   app.patch("/api/bookings/:id", route((req) => repo.updateBooking(id(req.params.id), body(req))));
 
+  // Página de administração: somente leitura, pensada para uso local.
+  // ATENÇÃO: ainda não há login. Antes de publicar o site, defina ADMIN_TOKEN
+  // (o painel passa a exigir o token) ou implemente autenticação de verdade.
+  const adminToken = process.env.ADMIN_TOKEN;
+  app.get("/api/admin/overview", (req, res, next) => {
+    if (adminToken && req.get("x-admin-token") !== adminToken) {
+      res.status(401).json({ error: "Token de administrador inválido." });
+      return;
+    }
+    route(() => ({ ...repo.adminOverview(), protected: Boolean(adminToken) }))(req, res, next);
+  });
+
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Rota não encontrada." });
   });

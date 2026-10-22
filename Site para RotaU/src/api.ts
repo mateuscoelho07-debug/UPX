@@ -58,12 +58,23 @@ export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mai
 
 export type Session = { profile: "student" | "driver"; id: number };
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export type AdminRow = Record<string, string | number | null>;
+
+export type AdminOverview = {
+  colleges: AdminRow[];
+  students: AdminRow[];
+  drivers: AdminRow[];
+  bookings: AdminRow[];
+  searches: AdminRow[];
+  protected: boolean;
+};
+
+async function request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
   let res: Response;
   try {
     res = await fetch(API_URL + path, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...extraHeaders },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -98,6 +109,8 @@ export const api = {
     request<{ id: number; status: BookingStatus }>("POST", "/bookings", { studentId, driverId }),
   updateBooking: (id: number, data: { status?: BookingStatus; pickupTime?: string | null }) =>
     request("PATCH", `/bookings/${id}`, data),
+  adminOverview: (token?: string) =>
+    request<AdminOverview>("GET", "/admin/overview", undefined, token ? { "x-admin-token": token } : undefined),
 };
 
 const SESSION_KEY = "rotau.session";

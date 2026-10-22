@@ -349,6 +349,31 @@ function createRepository(db: DatabaseSync) {
       return getBooking(id);
     },
 
+    // Visão geral de todas as tabelas para a página de administração (/admin)
+    adminOverview() {
+      return {
+        colleges: all<Record<string, unknown>>(`
+          SELECT c.id, c.name,
+                 (SELECT COUNT(*) FROM students s WHERE s.college_id = c.id) AS students,
+                 (SELECT COUNT(*) FROM driver_colleges dc WHERE dc.college_id = c.id) AS drivers
+          FROM colleges c ORDER BY c.name`),
+        students: all<Record<string, unknown>>(`
+          SELECT s.id, s.name, s.email, s.phone, s.address, c.name AS college, s.created_at AS createdAt
+          FROM students s JOIN colleges c ON c.id = s.college_id ORDER BY s.id DESC`),
+        drivers: all<DriverRow & { createdAt: string }>(`${driverSummarySql.replace("d.rating,", "d.rating, d.created_at AS createdAt,")} ORDER BY d.id DESC`)
+          .map((row) => {
+            const driver = toDriver(row);
+            return { ...driver, cities: driver.cities.join(", "), colleges: driver.colleges.join(", "), createdAt: row.createdAt };
+          }),
+        bookings: all<Record<string, unknown>>(`
+          SELECT b.id, s.name AS student, d.name AS driver, b.pickup, b.pickup_time AS pickupTime, b.status, b.created_at AS createdAt
+          FROM bookings b JOIN students s ON s.id = b.student_id JOIN drivers d ON d.id = b.driver_id ORDER BY b.id DESC`),
+        searches: all<Record<string, unknown>>(`
+          SELECT se.id, se.address, c.name AS college, se.results, se.created_at AS createdAt
+          FROM searches se JOIN colleges c ON c.id = se.college_id ORDER BY se.id DESC LIMIT 500`),
+      };
+    },
+
     seedIfEmpty(): void {
       if (get<{ total: number }>("SELECT COUNT(*) AS total FROM colleges")!.total > 0) return;
       transaction(() => {
