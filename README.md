@@ -21,6 +21,10 @@ Outros comandos:
 
 O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `API_PORT` (porta da API) e `SEED=false` (não criar dados de exemplo).
 
+## Publicar na internet
+
+O passo a passo para colocar o site no ar (Railway, com banco persistente e domínio próprio) está em [`PUBLICAR.md`](PUBLICAR.md).
+
 ## Banco de dados
 
 O esquema completo está em [`server/schema.sql`](Site%20para%20RotaU/server/schema.sql):
