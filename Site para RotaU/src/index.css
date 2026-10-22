@@ -1,0 +1,140 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --color-blue-50: #ecfcff;
+  --color-blue-100: #cff7fd;
+  --color-blue-200: #a5edf7;
+  --color-blue-300: #67ddeb;
+  --color-blue-400: #22bfd2;
+  --color-blue-500: #06a8c0;
+  --color-blue-600: #0097b2;
+  --color-blue-700: #08788f;
+  --color-blue-800: #0e6072;
+  --color-blue-900: #104f5e;
+  --color-blue-950: #052f39;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  font-family: var(--font-sans);
+  background: white;
+}
+
+button,
+a,
+input,
+select {
+  outline-offset: 3px;
+}
+
+button {
+  cursor: pointer;
+}
+
+.nav-link {
+  @apply text-sm font-semibold text-slate-600 transition hover:text-blue-600;
+}
+
+.btn-primary {
+  @apply inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-blue-200 transition duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-xl;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3.5 font-bold text-slate-700 transition duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700;
+}
+
+.eyebrow,
+.section-tag {
+  @apply inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-4 py-2 text-xs font-extrabold uppercase tracking-widest text-blue-700 shadow-sm;
+}
+
+.section-title {
+  @apply mt-5 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl;
+}
+
+.section-copy {
+  @apply mt-4 text-lg leading-8 text-slate-600;
+}
+
+.form-control {
+  @apply w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-4 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100;
+}
+
+.step-card {
+  @apply relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-7 transition duration-300 hover:-translate-y-1 hover:border-blue-200 hover:shadow-xl hover:shadow-blue-900/5;
+}
+
+.icon-box {
+  @apply grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600;
+}
+
+.dark-stat {
+  @apply rounded-2xl border border-slate-800 bg-slate-900 p-5;
+}
+
+.dark-stat strong,
+.dark-stat span {
+  @apply block;
+}
+
+.dark-stat strong {
+  @apply text-lg text-white;
+}
+
+.dark-stat span {
+  @apply mt-1 text-sm text-slate-400;
+}
+
+.value-card {
+  @apply rounded-2xl border border-slate-800 bg-slate-900 p-6;
+}
+
+.value-card h3 {
+  @apply mt-4 font-bold text-white;
+}
+
+.value-card p {
+  @apply mt-2 text-sm leading-6 text-slate-400;
+}
+
+.profile-card {
+  @apply rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-blue-900/5;
+}
+
+.profile-tab {
+  @apply flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-500 transition;
+}
+
+.profile-tab.active {
+  @apply bg-white text-blue-700 shadow-sm;
+}
+
+.hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+}
+
+.route-orbit {
+  @apply absolute -inset-10 hidden rounded-full border border-blue-200/70 lg:block;
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .route-orbit { animation: none; }
+}
