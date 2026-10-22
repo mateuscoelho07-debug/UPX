@@ -48,3 +48,9 @@ O esquema completo está em [`server/schema.sql`](Site%20para%20RotaU/server/sch
 | GET | `/api/vans?studentId=` | Vans que atendem a faculdade do estudante |
 | POST | `/api/bookings` | Estudante reserva uma vaga |
 | PATCH | `/api/bookings/:id` | Motorista confirma ou recusa (`status`, `pickupTime`) |
+
+## Painel de administração
+
+Com o site rodando, abra `http://localhost:8443/admin` (ou `http://localhost:3001/admin` com `pnpm start`). Ele mostra, somente para consulta, todos os estudantes, motoristas, reservas, faculdades e buscas salvos no banco, com filtro.
+
+**Atenção:** o painel ainda não tem login e foi feito para uso local. Antes de publicar o site, defina a variável `ADMIN_TOKEN` no servidor: a API passa a exigir esse token e o painel pede a senha para abrir.

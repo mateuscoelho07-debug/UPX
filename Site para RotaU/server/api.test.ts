@@ -84,3 +84,14 @@ test("valida campos obrigatórios", async () => {
   assert.equal(status, 400);
   assert.match(body.error, /obrigatório/);
 });
+
+test("painel de administração lista todas as tabelas", async () => {
+  const { status, body } = await call("GET", "/admin/overview");
+  assert.equal(status, 200);
+  for (const table of ["colleges", "students", "drivers", "bookings", "searches"]) {
+    assert.ok(Array.isArray(body[table]), table);
+  }
+  assert.ok(body.drivers.some((d: { name: string; cities: string }) => d.name === "Carlos Eduardo" && d.cities === "Centro, Sorocaba"));
+  assert.ok(body.bookings.length >= 4);
+  assert.ok(body.searches.length >= 1);
+});
