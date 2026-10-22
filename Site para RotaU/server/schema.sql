@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS students (
   email      TEXT NOT NULL UNIQUE COLLATE NOCASE,
   address    TEXT NOT NULL,
   college_id INTEGER NOT NULL REFERENCES colleges(id),
+  password_hash TEXT,  -- scrypt (ver server/auth.ts); nulo = conta sem senha, não consegue entrar
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   capacity       INTEGER NOT NULL DEFAULT 12 CHECK (capacity > 0),
   departure_time TEXT NOT NULL DEFAULT '17:30',
   rating         REAL NOT NULL DEFAULT 5.0 CHECK (rating BETWEEN 0 AND 5),
+  password_hash  TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -66,6 +68,15 @@ CREATE TABLE IF NOT EXISTS searches (
   address    TEXT NOT NULL,
   college_id INTEGER NOT NULL REFERENCES colleges(id),
   results    INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Sessões de login: o cookie guarda o token, o banco guarda só o hash dele
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  profile    TEXT NOT NULL CHECK (profile IN ('student', 'driver', 'admin')),
+  user_id    INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
