@@ -305,11 +305,18 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<Session | null>(null);
+  const [apiOffline, setApiOffline] = useState(false);
 
   useEffect(() => {
     api.colleges()
-      .then((list) => setColleges(list.map((college) => college.name)))
-      .catch(() => setColleges(defaultColleges));
+      .then((list) => {
+        setColleges(list.map((college) => college.name));
+        setApiOffline(false);
+      })
+      .catch(() => {
+        setColleges(defaultColleges);
+        setApiOffline(true);
+      });
   }, []);
 
   function openSignup(type: "student" | "driver") {
@@ -383,6 +390,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900">
+      {apiOffline && (
+        <div className="bg-amber-100 px-5 py-2.5 text-center text-sm font-semibold text-amber-900">
+          O servidor do banco de dados não respondeu. Rode <code className="font-mono">pnpm dev</code> na pasta do site para subir a API junto.
+        </div>
+      )}
       <header className="relative z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
           <Logo />
@@ -556,7 +568,10 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white px-5 py-8 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 sm:flex-row">
           <Logo />
-          <p className="text-sm text-slate-500">© 2026 RotaU. Seu caminho para a universidade.</p>
+          <div className="flex items-center gap-5 text-sm text-slate-500">
+            <p>© 2026 RotaU. Seu caminho para a universidade.</p>
+            <a className="font-semibold hover:text-slate-800" href="/admin">Admin</a>
+          </div>
         </div>
       </footer>
 

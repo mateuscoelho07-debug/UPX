@@ -1,4 +1,4 @@
-// API REST do RotaU. Rode com `pnpm server` (porta 3001 por padrão).
+// API REST do RotaU. Rode com `pnpm api` (porta 3001 por padrão).
 import express, { type ErrorRequestHandler, type Request, type RequestHandler } from "express";
 import path from "node:path";
 import { existsSync } from "node:fs";
