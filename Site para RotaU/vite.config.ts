@@ -34,6 +34,10 @@ react(),
       host: process.env.FIGMA_DEV_SERVER_HOST || '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
+      // Encaminha as chamadas /api para o servidor do banco de dados (server/index.js)
+      proxy: {
+        '/api': `http://localhost:${process.env.API_PORT || '3001'}`,
+      },
       watch: {
         ignored: [
           '**/.figma/**',

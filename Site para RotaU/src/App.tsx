@@ -1,4 +1,5 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, loadSession, saveSession, type BookingStatus, type DriverDashboardData, type Passenger, type Session, type Student, type Van } from "./api";
 
 type IconName =
   | "arrow"
@@ -70,7 +71,7 @@ function Field({
   );
 }
 
-const colleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
+const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
 
 function DashboardHeader({
   profile,
@@ -96,13 +97,51 @@ function DashboardHeader({
   );
 }
 
-function DriverDashboard({ onBack }: { onBack: () => void }) {
-  const passengers = [
-    { name: "Mariana Costa", initials: "MC", pickup: "Jd. Europa, 17:40", college: "Unifacens", status: "Confirmado" },
-    { name: "Lucas Ribeiro", initials: "LR", pickup: "Vila Hortência, 17:55", college: "Fatec", status: "Confirmado" },
-    { name: "Ana Beatriz", initials: "AB", pickup: "Centro, 18:10", college: "Uniso", status: "Aguardando" },
-    { name: "Pedro Martins", initials: "PM", pickup: "Jd. Faculdade, 18:20", college: "Unip", status: "Confirmado" },
-  ];
+const weekdays = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
+}
+
+function StatusMessage({ loading, error, onRetry }: { loading: boolean; error: string | null; onRetry: () => void }) {
+  if (loading) return <p className="mt-8 text-slate-500">Carregando...</p>;
+  if (!error) return null;
+  return (
+    <div className="mt-8 rounded-2xl border border-red-100 bg-red-50 p-5 text-sm text-red-800">
+      <strong className="block">Não foi possível carregar os dados.</strong>
+      <span>{error}</span>
+      <button className="ml-3 font-bold underline" onClick={onRetry}>Tentar de novo</button>
+    </div>
+  );
+}
+
+function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () => void }) {
+  const [data, setData] = useState<DriverDashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    api.driverDashboard(driverId)
+      .then(setData)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [driverId]);
+
+  useEffect(load, [load]);
+
+  async function setStatus(passenger: Passenger, status: BookingStatus) {
+    try {
+      await api.updateBooking(passenger.bookingId, { status });
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  const driver = data?.driver;
+  const passengers = data?.passengers ?? [];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -112,50 +151,89 @@ function DriverDashboard({ onBack }: { onBack: () => void }) {
           <div>
             <span className="section-tag">Rota de hoje</span>
             <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Seus passageiros</h1>
-            <p className="mt-2 text-slate-600">Acompanhe os embarques e mantenha sua rota organizada.</p>
+            <p className="mt-2 text-slate-600">{driver ? `Olá, ${driver.name.split(" ")[0]}! ` : ""}Acompanhe os embarques e mantenha sua rota organizada.</p>
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-blue-950">
             <span className="grid size-10 place-items-center rounded-xl bg-blue-600 text-white"><Icon name="clock" /></span>
-            <div><span className="block text-xs font-bold uppercase tracking-wider text-blue-600">Próxima saída</span><strong className="text-lg">17:30</strong></div>
+            <div><span className="block text-xs font-bold uppercase tracking-wider text-blue-600">Próxima saída</span><strong className="text-lg">{driver?.departureTime ?? "--:--"}</strong></div>
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Passageiros</span><strong className="mt-2 block text-3xl font-extrabold text-slate-950">4</strong></article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Vagas livres</span><strong className="mt-2 block text-3xl font-extrabold text-blue-600">8</strong></article>
-          <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Destino principal</span><strong className="mt-2 block text-lg font-extrabold text-slate-950">Unifacens</strong></article>
-        </div>
+        <StatusMessage loading={loading && !data} error={error} onRetry={load} />
 
-        <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-blue-900/5">
-          <div className="flex flex-col gap-2 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <div><h2 className="text-lg font-extrabold text-slate-950">Lista de embarque</h2><p className="mt-1 text-sm text-slate-500">Terça-feira, rota Sorocaba</p></div>
-            <span className="text-sm font-semibold text-slate-500">4 de 12 lugares ocupados</span>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {passengers.map((passenger) => (
-              <article className="grid gap-4 px-6 py-5 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center" key={passenger.name}>
-                <div className="flex items-center gap-3">
-                  <span className="grid size-11 shrink-0 place-items-center rounded-full bg-blue-100 text-sm font-extrabold text-blue-700">{passenger.initials}</span>
-                  <div><strong className="block text-sm text-slate-950">{passenger.name}</strong><span className="text-xs text-slate-500">Passageiro</span></div>
-                </div>
-                <span className="flex items-center gap-2 text-sm text-slate-600"><Icon name="location" className="size-4 text-slate-400" />{passenger.pickup}</span>
-                <span className="flex items-center gap-2 text-sm font-semibold text-slate-700"><Icon name="student" className="size-4 text-slate-400" />{passenger.college}</span>
-                <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold ${passenger.status === "Confirmado" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{passenger.status}</span>
-              </article>
-            ))}
-          </div>
-        </section>
+        {driver && (
+          <>
+            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+              <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Passageiros</span><strong className="mt-2 block text-3xl font-extrabold text-slate-950">{passengers.length}</strong></article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Vagas livres</span><strong className="mt-2 block text-3xl font-extrabold text-blue-600">{driver.freeSeats}</strong></article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-5"><span className="text-sm font-semibold text-slate-500">Destino principal</span><strong className="mt-2 block text-lg font-extrabold text-slate-950">{data?.mainDestination}</strong></article>
+            </div>
+
+            <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-blue-900/5">
+              <div className="flex flex-col gap-2 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+                <div><h2 className="text-lg font-extrabold text-slate-950">Lista de embarque</h2><p className="mt-1 text-sm text-slate-500">{weekdays[new Date().getDay()]}, rota {driver.cities[driver.cities.length - 1] ?? ""}</p></div>
+                <span className="text-sm font-semibold text-slate-500">{driver.occupied} de {driver.capacity} lugares ocupados</span>
+              </div>
+              {passengers.length === 0 && (
+                <p className="px-6 py-10 text-center text-sm text-slate-500">Nenhum passageiro ainda. Assim que um estudante reservar uma vaga, ele aparece aqui.</p>
+              )}
+              <div className="divide-y divide-slate-100">
+                {passengers.map((passenger) => (
+                  <article className="grid gap-4 px-6 py-5 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center" key={passenger.bookingId}>
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-11 shrink-0 place-items-center rounded-full bg-blue-100 text-sm font-extrabold text-blue-700">{initials(passenger.name)}</span>
+                      <div><strong className="block text-sm text-slate-950">{passenger.name}</strong><span className="text-xs text-slate-500">Passageiro</span></div>
+                    </div>
+                    <span className="flex items-center gap-2 text-sm text-slate-600"><Icon name="location" className="size-4 text-slate-400" />{passenger.pickup}{passenger.pickupTime ? `, ${passenger.pickupTime}` : ""}</span>
+                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-700"><Icon name="student" className="size-4 text-slate-400" />{passenger.college}</span>
+                    {passenger.status === "Aguardando" ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">Aguardando</span>
+                        <button className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700" onClick={() => setStatus(passenger, "Confirmado")}>Confirmar</button>
+                        <button className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200" onClick={() => setStatus(passenger, "Cancelado")}>Recusar</button>
+                      </span>
+                    ) : (
+                      <span className="w-fit rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">{passenger.status}</span>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </main>
     </div>
   );
 }
 
-function StudentDashboard({ onBack }: { onBack: () => void }) {
-  const vans = [
-    { driver: "Carlos Eduardo", vehicle: "Renault Master • 12 lugares", route: "Centro → Unifacens", time: "17:30", seats: "3 vagas", rating: "4,9" },
-    { driver: "Fernanda Lima", vehicle: "Mercedes Sprinter • 15 lugares", route: "Zona Norte → Fatec", time: "18:00", seats: "5 vagas", rating: "4,8" },
-    { driver: "Roberto Alves", vehicle: "Fiat Ducato • 14 lugares", route: "Jd. Europa → Uniso", time: "18:20", seats: "2 vagas", rating: "4,9" },
-  ];
+function StudentDashboard({ studentId, onBack }: { studentId: number; onBack: () => void }) {
+  const [student, setStudent] = useState<Student | null>(null);
+  const [vans, setVans] = useState<Van[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([api.student(studentId), api.vans(studentId)])
+      .then(([studentData, vansData]) => {
+        setStudent(studentData);
+        setVans(vansData);
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [studentId]);
+
+  useEffect(load, [load]);
+
+  async function book(van: Van) {
+    try {
+      await api.book(studentId, van.id);
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -167,20 +245,30 @@ function StudentDashboard({ onBack }: { onBack: () => void }) {
           <p className="mt-2 text-slate-600">Encontramos motoristas com rotas próximas ao seu endereço e à sua faculdade.</p>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><Icon name="location" /></span>
-            <div><strong className="block text-sm text-blue-950">Saindo de Sorocaba</strong><span className="text-sm text-blue-700">Rotas para faculdades próximas</span></div>
+        {student && (
+          <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><Icon name="location" /></span>
+              <div><strong className="block text-sm text-blue-950">Saindo de {student.address}</strong><span className="text-sm text-blue-700">Rotas para {student.college}</span></div>
+            </div>
+            <button className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-100" onClick={onBack}>Alterar busca</button>
           </div>
-          <button className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-100" onClick={onBack}>Alterar busca</button>
-        </div>
+        )}
+
+        <StatusMessage loading={loading && !student} error={error} onRetry={load} />
+
+        {student && vans.length === 0 && (
+          <p className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 text-center text-slate-600">Ainda não há vans atendendo a {student.college}. Volte em breve!</p>
+        )}
 
         <section className="mt-6 grid gap-5 lg:grid-cols-3">
           {vans.map((van, index) => (
-            <article className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200" key={van.driver}>
+            <article className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200" key={van.id}>
               <div className="flex items-start justify-between gap-4">
                 <span className="grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon name="van" /></span>
-                {index === 0 && <span className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>}
+                {van.booked ? (
+                  <span className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Sua van</span>
+                ) : index === 0 && <span className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>}
               </div>
               <h2 className="mt-5 text-lg font-extrabold text-slate-950">{van.driver}</h2>
               <p className="mt-1 text-sm text-slate-500">{van.vehicle}</p>
@@ -189,10 +277,14 @@ function StudentDashboard({ onBack }: { onBack: () => void }) {
                 <p className="flex items-center gap-3 text-sm text-slate-600"><Icon name="clock" className="size-5 text-blue-600" />Saída às {van.time}</p>
               </div>
               <div className="mb-5 flex items-center justify-between text-sm">
-                <span className="font-bold text-emerald-700">{van.seats}</span>
-                <span className="font-semibold text-slate-600">★ {van.rating}</span>
+                <span className={`font-bold ${van.freeSeats > 0 ? "text-emerald-700" : "text-red-600"}`}>{van.freeSeats === 0 ? "Lotada" : `${van.freeSeats} ${van.freeSeats === 1 ? "vaga" : "vagas"}`}</span>
+                <span className="font-semibold text-slate-600">★ {van.rating.toFixed(1).replace(".", ",")}</span>
               </div>
-              <button className="btn-primary mt-auto w-full justify-center">Ver detalhes <Icon name="arrow" /></button>
+              {van.booked ? (
+                <p className="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-6 py-3.5 font-bold text-emerald-700"><Icon name="check" /> Vaga reservada</p>
+              ) : (
+                <button className="btn-primary mt-auto w-full justify-center disabled:opacity-50" disabled={van.freeSeats === 0} onClick={() => book(van)}>Reservar vaga <Icon name="arrow" /></button>
+              )}
             </article>
           ))}
         </section>
@@ -204,38 +296,89 @@ function StudentDashboard({ onBack }: { onBack: () => void }) {
 export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [profile, setProfile] = useState<"student" | "driver">("student");
-  const [searched, setSearched] = useState(false);
+  const [colleges, setColleges] = useState<string[]>(defaultColleges);
+  const [search, setSearch] = useState({ address: "", college: "" });
+  const [searchResult, setSearchResult] = useState<{ college: string; count: number } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(loadSession);
   const [registered, setRegistered] = useState(false);
-  const [dashboard, setDashboard] = useState<"student" | "driver" | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<Session | null>(null);
+
+  useEffect(() => {
+    api.colleges()
+      .then((list) => setColleges(list.map((college) => college.name)))
+      .catch(() => setColleges(defaultColleges));
+  }, []);
 
   function openSignup(type: "student" | "driver") {
     setProfile(type);
     setRegistered(false);
+    setSignupError(null);
     setModalOpen(true);
   }
 
-  function handleSearch(event: FormEvent) {
+  async function handleSearch(event: FormEvent) {
     event.preventDefault();
-    setSearched(true);
+    setSearchError(null);
+    try {
+      setSearchResult(await api.search(search.address, search.college));
+    } catch (err) {
+      setSearchResult(null);
+      setSearchError((err as Error).message);
+    }
   }
 
-  function handleSignup(event: FormEvent) {
+  async function handleSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setRegistered(true);
+    const form = new FormData(event.currentTarget);
+    const field = (name: string) => String(form.get(name) ?? "").trim();
+    setSubmitting(true);
+    setSignupError(null);
+    try {
+      const created = profile === "student"
+        ? await api.createStudent({ name: field("name"), phone: field("phone"), email: field("email"), address: field("address"), college: field("college") })
+        : await api.createDriver({
+            name: field("name"),
+            phone: field("phone"),
+            email: field("email"),
+            vanModel: field("vanModel"),
+            plate: field("plate"),
+            capacity: Number(field("capacity")),
+            departureTime: field("departureTime"),
+            cities: field("cities"),
+            colleges: field("colleges"),
+          });
+      const newSession: Session = { profile, id: created.id };
+      saveSession(newSession);
+      setSession(newSession);
+      setRegistered(true);
+    } catch (err) {
+      setSignupError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function openDashboard() {
+    if (!session) return;
     setModalOpen(false);
-    setDashboard(profile);
+    setDashboard(session);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  if (dashboard === "driver") {
-    return <DriverDashboard onBack={() => setDashboard(null)} />;
+  function logout() {
+    saveSession(null);
+    setSession(null);
   }
 
-  if (dashboard === "student") {
-    return <StudentDashboard onBack={() => setDashboard(null)} />;
+  if (dashboard?.profile === "driver") {
+    return <DriverDashboard driverId={dashboard.id} onBack={() => setDashboard(null)} />;
+  }
+
+  if (dashboard?.profile === "student") {
+    return <StudentDashboard studentId={dashboard.id} onBack={() => setDashboard(null)} />;
   }
 
   return (
@@ -248,9 +391,18 @@ export default function App() {
             <a className="nav-link" href="#para-quem">Para quem é</a>
             <a className="nav-link" href="#sobre">Sobre nós</a>
           </nav>
-          <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={() => openSignup("student")}>
-            Criar conta
-          </button>
+          {session ? (
+            <div className="flex items-center gap-2">
+              <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={openDashboard}>
+                Meu painel
+              </button>
+              <button className="text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={logout}>Sair</button>
+            </div>
+          ) : (
+            <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={() => openSignup("student")}>
+              Criar conta
+            </button>
+          )}
         </div>
       </header>
 
@@ -299,10 +451,10 @@ export default function App() {
                 </div>
                 <div className="space-y-5">
                   <Field label="Onde você mora?" icon="location">
-                    <input className="form-control" required placeholder="Rua, bairro ou cidade" />
+                    <input className="form-control" required placeholder="Rua, bairro ou cidade" value={search.address} onChange={(e) => setSearch({ ...search, address: e.target.value })} />
                   </Field>
                   <Field label="Qual é a sua faculdade?" icon="student">
-                    <select className="form-control appearance-none" required defaultValue="">
+                    <select className="form-control appearance-none" required value={search.college} onChange={(e) => setSearch({ ...search, college: e.target.value })}>
                       <option value="" disabled>Selecione sua faculdade</option>
                       {colleges.map((college) => <option key={college}>{college}</option>)}
                     </select>
@@ -311,14 +463,19 @@ export default function App() {
                     <Icon name="search" /> Buscar rotas disponíveis
                   </button>
                 </div>
-                {searched && (
+                {searchResult && (
                   <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
                     <div className="flex gap-3">
-                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-blue-600 text-white"><Icon name="check" className="size-4" /></span>
-                      <div><strong className="block">Encontramos rotas próximas!</strong><span className="text-blue-700">Crie sua conta para ver motoristas e horários.</span></div>
+                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-blue-600 text-white"><Icon name={searchResult.count > 0 ? "check" : "search"} className="size-4" /></span>
+                      {searchResult.count > 0 ? (
+                        <div><strong className="block">Encontramos {searchResult.count} {searchResult.count === 1 ? "rota" : "rotas"} para a {searchResult.college}!</strong><span className="text-blue-700">Crie sua conta para ver motoristas e horários.</span></div>
+                      ) : (
+                        <div><strong className="block">Ainda não há vans para a {searchResult.college}.</strong><span className="text-blue-700">Crie sua conta e avisamos quando surgir uma rota.</span></div>
+                      )}
                     </div>
                   </div>
                 )}
+                {searchError && <p className="mt-5 rounded-2xl bg-red-50 p-4 text-sm text-red-800">{searchError}</p>}
               </form>
             </div>
           </div>
@@ -429,15 +586,15 @@ export default function App() {
                 </div>
                 <form className="mt-6 space-y-4" onSubmit={handleSignup}>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Nome completo" icon="user"><input className="form-control" required placeholder="Seu nome" /></Field>
-                    <Field label="Celular" icon="user"><input className="form-control" required type="tel" placeholder="(00) 00000-0000" /></Field>
+                    <Field label="Nome completo" icon="user"><input className="form-control" name="name" required placeholder="Seu nome" /></Field>
+                    <Field label="Celular" icon="user"><input className="form-control" name="phone" required type="tel" placeholder="(00) 00000-0000" /></Field>
                   </div>
-                  <Field label="E-mail" icon="user"><input className="form-control" required type="email" placeholder="voce@email.com" /></Field>
+                  <Field label="E-mail" icon="user"><input className="form-control" name="email" required type="email" placeholder="voce@email.com" /></Field>
                   {profile === "student" ? (
                     <>
-                      <Field label="Seu endereço" icon="location"><input className="form-control" required placeholder="Rua, número, bairro e cidade" /></Field>
+                      <Field label="Seu endereço" icon="location"><input className="form-control" name="address" required placeholder="Rua, número, bairro e cidade" defaultValue={search.address} /></Field>
                       <Field label="Faculdade onde estuda" icon="student">
-                        <select className="form-control appearance-none" required defaultValue="">
+                        <select className="form-control appearance-none" name="college" required defaultValue={search.college}>
                           <option value="" disabled>Selecione sua faculdade</option>
                           {colleges.map((college) => <option key={college}>{college}</option>)}
                         </select>
@@ -446,18 +603,23 @@ export default function App() {
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <Field label="Modelo da van" icon="van"><input className="form-control" required placeholder="Ex.: Renault Master" /></Field>
-                        <Field label="Placa" icon="van"><input className="form-control" required placeholder="ABC-1D23" /></Field>
+                        <Field label="Modelo da van" icon="van"><input className="form-control" name="vanModel" required placeholder="Ex.: Renault Master" /></Field>
+                        <Field label="Placa" icon="van"><input className="form-control" name="plate" required placeholder="ABC-1D23" /></Field>
                       </div>
-                      <Field label="Cidades por onde passa" icon="location"><input className="form-control" required placeholder="Separe as cidades por vírgula" /></Field>
-                      <Field label="Faculdades que atende" icon="student"><input className="form-control" required placeholder="Separe as faculdades por vírgula" /></Field>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Lugares na van" icon="user"><input className="form-control" name="capacity" required type="number" min={1} max={30} defaultValue={12} /></Field>
+                        <Field label="Horário de saída" icon="clock"><input className="form-control" name="departureTime" required type="time" defaultValue="17:30" /></Field>
+                      </div>
+                      <Field label="Cidades por onde passa" icon="location"><input className="form-control" name="cities" required placeholder="Separe as cidades por vírgula" /></Field>
+                      <Field label="Faculdades que atende" icon="student"><input className="form-control" name="colleges" required placeholder="Separe as faculdades por vírgula" /></Field>
                     </>
                   )}
                   <label className="flex items-start gap-3 text-sm leading-6 text-slate-600">
                     <input className="mt-1 size-4 accent-blue-600" type="checkbox" required />
                     Aceito os termos de uso e a política de privacidade do RotaU.
                   </label>
-                  <button className="btn-primary w-full justify-center" type="submit">Criar conta como {profile === "student" ? "estudante" : "motorista"} <Icon name="arrow" /></button>
+                  {signupError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{signupError}</p>}
+                  <button className="btn-primary w-full justify-center disabled:opacity-60" type="submit" disabled={submitting}>{submitting ? "Salvando..." : <>Criar conta como {profile === "student" ? "estudante" : "motorista"} <Icon name="arrow" /></>}</button>
                 </form>
               </>
             )}
