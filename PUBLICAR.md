@@ -72,6 +72,10 @@ Os avisos aparecem no **sino** do painel (estudante e motorista) e, se a pessoa 
 
 **O que ficou de fora:** notificação com o site fechado (Web Push) precisa de chaves e de um serviço que dispare no horário, o que não cabe no plano gratuito da Vercel sem complicar; fica para uma próxima etapa. Dá para o motorista informar o horário de volta no cadastro, mas ainda não dá para editar depois.
 
+## Uma van por aluno
+
+Cada estudante fica em **uma van só**. Na tela "Vans disponíveis" ele toca no card de qualquer van para ver motorista, rota, cidades, horários de ida e volta, faculdades e vagas. Dentro da van reservada ele confirma **Vou hoje / Não vou hoje** e pode **cancelar a vaga**; nas outras vans aparece **Trocar para esta van**. A regra também vale na API (não dá para burlar). Contas que já tinham mais de uma reserva antes dessa mudança continuam como estão; a regra vale para as próximas reservas. Nada muda na Vercel nem no Turso: não há tabela nova.
+
 ## Vans de demonstração (fictícias)
 
 Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de demonstração** que cobrem toda a região de Sorocaba (Centro e as quatro zonas de Sorocaba, Votorantim, Itu, Salto, Porto Feliz, Boituva, Tatuí, Iperó, Itapetininga, São Roque, Mairinque e outras cidades vizinhas) e atendem **todas as 12 faculdades** da lista, inclusive as que forem cadastradas depois.

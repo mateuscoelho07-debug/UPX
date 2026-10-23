@@ -376,3 +376,72 @@ test("previsão de chegada segue a ordem da rota de quem vai hoje", async () => 
   assert.equal((await repo.studentToday(ids[2]!, later)).legs[1]!.eta, "22:48");
   assert.equal((await repo.studentToday(ids[0]!, later)).legs[1]!.eta, "22:56");
 });
+
+test("cada estudante escolhe uma van só: trocar, cancelar e ver os detalhes", async () => {
+  const vanA = browser();
+  const a = await vanA.call("POST", "/drivers", { ...newDriver, email: "vana@teste.com", plate: "VAN-1A00", capacity: 2, returnTime: "22:30", colleges: "Fatec" });
+  const vanB = browser();
+  const b = await vanB.call("POST", "/drivers", { ...newDriver, name: "Bruno Lima", email: "vanb@teste.com", plate: "VAN-2B00", capacity: 2, colleges: "Fatec, Unip" });
+  const outra = browser();
+  const c = await outra.call("POST", "/drivers", { ...newDriver, name: "Carla Dias", email: "vanc@teste.com", plate: "VAN-3C00", colleges: "Unip" });
+
+  const lia = browser();
+  await lia.call("POST", "/students", { ...newStudent, name: "Lia Prado", email: "lia@teste.com", college: "Fatec", address: "Rua Lia, 1" });
+
+  // detalhes: só vans da faculdade dela; sem reserva o telefone fica escondido
+  assert.equal((await call("GET", `/vans/${a.body.id}`)).status, 401);
+  assert.equal((await lia.call("GET", `/vans/${c.body.id}`)).status, 404);
+  const antes = await lia.call("GET", `/vans/${a.body.id}`);
+  assert.equal(antes.status, 200);
+  assert.equal(antes.body.phone, null);
+  assert.equal(antes.body.booked, false);
+  assert.equal(antes.body.returnTime, "22:30");
+  assert.deepEqual(antes.body.cities, ["Votorantim", "Sorocaba"]);
+  assert.deepEqual(antes.body.colleges, ["Fatec"]);
+  assert.equal(antes.body.current, null);
+
+  const reservaA = await lia.call("POST", "/bookings", { driverId: a.body.id });
+  assert.equal(reservaA.status, 201);
+  const depois = await lia.call("GET", `/vans/${a.body.id}`);
+  assert.equal(depois.body.booked, true);
+  assert.equal(depois.body.phone, newDriver.phone);
+  assert.equal(depois.body.bookingId, reservaA.body.id);
+
+  // escolher outra van sem trocar é barrado, na API também
+  const semTrocar = await lia.call("POST", "/bookings", { driverId: b.body.id });
+  assert.equal(semTrocar.status, 409);
+  assert.match(semTrocar.body.error, /já escolheu uma van/);
+  assert.equal((await lia.call("POST", "/bookings", { driverId: b.body.id, replace: "true" })).status, 409);
+  const detalheB = await lia.call("GET", `/vans/${b.body.id}`);
+  assert.equal(detalheB.body.phone, null);
+  assert.equal(detalheB.body.current.driver, "Joana Souza");
+
+  // trocar: a reserva antiga é cancelada, a nova entra e a van antiga é avisada
+  const troca = await lia.call("POST", "/bookings", { driverId: b.body.id, replace: true });
+  assert.equal(troca.status, 201);
+  const vans = (await lia.call("GET", "/vans")).body;
+  assert.deepEqual(vans.filter((v: { booked: boolean }) => v.booked).map((v: { id: number }) => v.id), [b.body.id]);
+  assert.equal((await vanA.call("GET", `/drivers/${a.body.id}/dashboard`)).body.passengers.length, 0);
+  assert.ok((await vanA.call("GET", "/notifications")).body.items.some((n: { title: string }) => n.title === "Vaga liberada"));
+
+  // presença vale para a van atual
+  const hoje = await lia.call("PUT", "/attendance/today", { going: true });
+  assert.equal(hoje.body.van.driver, "Bruno Lima");
+  assert.equal((await vanB.call("GET", `/drivers/${b.body.id}/dashboard`)).body.today.going, 1);
+
+  // só o próprio estudante cancela; depois disso ele pode escolher outra van
+  const outro = browser();
+  await outro.call("POST", "/students", { ...newStudent, email: "intruso@teste.com", college: "Fatec" });
+  assert.equal((await outro.call("POST", `/bookings/${troca.body.id}/cancel`, {})).status, 403);
+  assert.equal((await vanB.call("POST", `/bookings/${troca.body.id}/cancel`, {})).status, 403);
+  assert.equal((await lia.call("POST", `/bookings/${troca.body.id}/cancel`, {})).status, 200);
+  assert.equal((await lia.call("POST", `/bookings/${troca.body.id}/cancel`, {})).status, 409);
+  assert.equal((await lia.call("PUT", "/attendance/today", { going: true })).status, 409);
+  assert.equal((await lia.call("GET", "/attendance/today")).body.van, null);
+
+  // o motorista não consegue reviver uma reserva cancelada
+  assert.equal((await vanB.call("PATCH", `/bookings/${troca.body.id}`, { status: "Confirmado" })).status, 409);
+
+  assert.equal((await lia.call("POST", "/bookings", { driverId: a.body.id })).status, 201);
+  assert.equal((await lia.call("GET", "/attendance/today")).body.van.driver, "Joana Souza");
+});

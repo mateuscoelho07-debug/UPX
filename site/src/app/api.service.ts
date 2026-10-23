@@ -41,10 +41,31 @@ export type Van = {
   vehicle: string;
   route: string;
   time: string;
+  returnTime: string | null;
   capacity: number;
   freeSeats: number;
   rating: number;
   booked: boolean;
+};
+
+export type VanDetail = {
+  id: number;
+  driver: string;
+  vehicle: string;
+  plate: string;
+  phone: string | null;
+  route: string;
+  cities: string[];
+  colleges: string[];
+  time: string;
+  returnTime: string | null;
+  capacity: number;
+  freeSeats: number;
+  rating: number;
+  booked: boolean;
+  bookingId: number | null;
+  bookingStatus: BookingStatus | null;
+  current: { driverId: number; driver: string; bookingId: number } | null;
 };
 
 export type BookingStatus = "Aguardando" | "Confirmado" | "Cancelado";
@@ -160,7 +181,11 @@ export class ApiService {
   driverDashboard = (id: number) => this.request<DriverDashboardData>("GET", `/drivers/${id}/dashboard`);
   startRoute = (id: number, leg: Leg) => this.request<DriverToday>("POST", `/drivers/${id}/route-runs`, { leg });
   vans = () => this.request<Van[]>("GET", "/vans");
-  book = (driverId: number) => this.request<{ id: number; status: BookingStatus }>("POST", "/bookings", { driverId });
+  vanDetail = (id: number) => this.request<VanDetail>("GET", `/vans/${id}`);
+  // replace: troca a van atual por esta (cada estudante fica em uma van só)
+  book = (driverId: number, replace = false) =>
+    this.request<{ id: number; status: BookingStatus }>("POST", "/bookings", replace ? { driverId, replace } : { driverId });
+  cancelBooking = (bookingId: number) => this.request<{ id: number; status: BookingStatus }>("POST", `/bookings/${bookingId}/cancel`);
   updateBooking = (id: number, data: { status?: BookingStatus; pickupTime?: string | null }) =>
     this.request<unknown>("PATCH", `/bookings/${id}`, data);
   today = () => this.request<StudentToday>("GET", "/attendance/today");
