@@ -191,6 +191,22 @@ export function createApp(
     return { ok: true };
   }, 200));
 
+  // Excluir a própria conta (estudante ou motorista): pede a senha de novo
+  app.post("/api/account/delete", route(async (req, res) => {
+    const user = currentUser(res);
+    const { password } = body(req) as Record<string, unknown>;
+    const key = `${req.ip}|delete|${user.profile}|${user.id}`;
+    limiter.check(key);
+    if (typeof password !== "string" || !(await verifyPassword(password, await repo.passwordHashOf(user)))) {
+      limiter.fail(key);
+      throw new ApiError(401, "Senha incorreta.");
+    }
+    limiter.reset(key);
+    await repo.deleteAccount(user);
+    clearSessionCookie(req, res);
+    return { ok: true };
+  }, 200));
+
   app.get("/api/auth/me", route(async (_req, res) => {
     const user = res.locals.user as SessionUser | undefined;
     if (!user) throw new ApiError(401, "Você não está logado.");
