@@ -19,7 +19,7 @@ Outros comandos:
 - `pnpm test:api`: testes da API.
 - `pnpm typecheck`: verificação de tipos do site e da API.
 
-O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar dados de exemplo) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
+O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar os motoristas e estudantes de exemplo; as faculdades são criadas sempre) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
 
 As contas de exemplo usam a senha `rotau1234` (por exemplo, motorista `carlos@rotau.com` ou estudante `mariana@email.com`). Contas criadas antes do login com senha não têm senha e não conseguem entrar: cadastre de novo ou apague o banco.
 
@@ -48,7 +48,7 @@ O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
 - A sessão fica num cookie `rotau_session` **httpOnly** e `SameSite=Lax`, válido por 30 dias. O banco guarda só o hash do token, então "Sair" encerra a sessão de verdade.
 - Cada usuário só acessa os próprios dados: o estudante vê e reserva só para si, e o motorista só vê o próprio painel e só confirma ou recusa reservas da própria van.
 - Requisições que alteram dados precisam ser JSON (bloqueia formulários de outros sites) e o login trava por 15 minutos depois de 10 tentativas erradas.
-- Em produção, atrás de HTTPS: defina `TRUST_PROXY=1` (se houver um proxy na frente, como na maioria das hospedagens) ou `COOKIE_SECURE=true`, para o cookie sair com a flag `Secure`. Use também `SEED=false` para não criar as contas de exemplo.
+- Em produção, atrás de HTTPS: defina `TRUST_PROXY=1` (se houver um proxy na frente, como na maioria das hospedagens) ou `COOKIE_SECURE=true`, para o cookie sair com a flag `Secure`. Use também `SEED=false` para não criar as contas de exemplo (as faculdades continuam sendo criadas).
 
 ## API
 
