@@ -73,7 +73,7 @@ function Field({
   );
 }
 
-const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
+const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip", "Unesp", "IFSP", "PUC-SP", "Anhanguera", "ESAMC", "Fadi", "Ceunsp"];
 
 type DashboardProps = { onBack: () => void; onLogout: () => void };
 
