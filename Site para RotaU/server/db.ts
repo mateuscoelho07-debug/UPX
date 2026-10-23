@@ -5,18 +5,13 @@ import { createClient, type Client, type InValue, type Transaction } from "@libs
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ApiError } from "./errors.ts";
+import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const schema = readFileSync(path.join(here, "schema.sql"), "utf8");
 
-export class ApiError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export { ApiError };
 
 export type BookingStatus = "Aguardando" | "Confirmado" | "Cancelado";
 const bookingStatuses: BookingStatus[] = ["Aguardando", "Confirmado", "Cancelado"];
@@ -73,7 +68,14 @@ export type Passenger = {
 
 export type Booking = { id: number; status: BookingStatus; pickup: string; pickupTime: string | null };
 
-export type StudentInput = { name?: string; phone?: string; email?: string; address?: string; college?: string | number };
+export type StudentInput = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  college?: string | number;
+  passwordHash?: string;
+};
 
 export type DriverInput = {
   name?: string;
@@ -86,6 +88,7 @@ export type DriverInput = {
   rating?: number;
   cities?: string | string[];
   colleges?: string | string[];
+  passwordHash?: string;
 };
 
 type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats"> & { cities: string | null; colleges: string | null };
@@ -104,10 +107,24 @@ export async function openDatabase(
   }
   const db = createClient({ url, authToken });
   await db.executeMultiple(schema);
+  await migrate(db);
   const repo = createRepository(db);
   if (process.env.SEED !== "false") await repo.seedIfEmpty();
   return repo;
 }
+
+// Bancos criados antes do login não têm a coluna de senha
+async function migrate(db: Client) {
+  for (const table of ["students", "drivers"]) {
+    const { rows } = await db.execute(`PRAGMA table_info(${table})`);
+    if (!rows.some((row) => row.name === "password_hash")) {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN password_hash TEXT`);
+    }
+  }
+}
+
+// Senha das contas de exemplo criadas pelo seed (ver README)
+export const DEMO_PASSWORD = "rotau1234";
 
 function localUrl(file: string): string {
   mkdirSync(path.dirname(file), { recursive: true });
@@ -238,8 +255,8 @@ function createRepository(db: Client) {
       const input = data as Record<string, unknown>;
       const college = await findCollege(typeof data.college === "number" ? data.college : text(input, "college"));
       const id = await insertOrConflict(
-        "INSERT INTO students (name, phone, email, address, college_id) VALUES (?, ?, ?, ?, ?)",
-        [text(input, "name"), text(input, "phone"), text(input, "email"), text(input, "address"), college.id],
+        "INSERT INTO students (name, phone, email, address, college_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
+        [text(input, "name"), text(input, "phone"), text(input, "email"), text(input, "address"), college.id, data.passwordHash ?? null],
         "Já existe um estudante com este e-mail.",
       );
       return getStudent(id);
@@ -269,9 +286,9 @@ function createRepository(db: Client) {
 
       const id = await transaction(async (tx) => {
         const driverId = await insertOrConflict(
-          `INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, rating)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [fields.name, fields.phone, fields.email, fields.vanModel, fields.plate, capacity, departureTime, rating],
+          `INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, rating, password_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [fields.name, fields.phone, fields.email, fields.vanModel, fields.plate, capacity, departureTime, rating, data.passwordHash ?? null],
           "Já existe um motorista com este e-mail ou placa.",
           tx,
         );
@@ -378,6 +395,44 @@ function createRepository(db: Client) {
       return getBooking(id);
     },
 
+    // Conta usada no login (o e-mail é único dentro de cada perfil)
+    findAccount(profile: "student" | "driver", email: string): Promise<{ id: number; name: string; passwordHash: string | null } | undefined> {
+      const table = profile === "student" ? "students" : "drivers";
+      return get(`SELECT id, name, password_hash AS passwordHash FROM ${table} WHERE email = ?`, [email.trim()]);
+    },
+
+    async accountName(user: SessionUser): Promise<string> {
+      if (user.profile === "admin") return "Administrador";
+      return (user.profile === "student" ? await getStudent(user.id) : await getDriver(user.id)).name;
+    },
+
+    async createSession(tokenHash: string, user: SessionUser, days: number): Promise<void> {
+      await run("DELETE FROM sessions WHERE expires_at <= datetime('now')");
+      await run(`INSERT INTO sessions (token_hash, profile, user_id, expires_at)
+                 VALUES (?, ?, ?, datetime('now', ?))`, [tokenHash, user.profile, user.id, `+${days} days`]);
+    },
+
+    // Sessão válida (não expirada e de uma conta que ainda existe)
+    getSession(tokenHash: string): Promise<SessionUser | undefined> {
+      return get<{ profile: Profile; id: number }>(`
+        SELECT se.profile, se.user_id AS id FROM sessions se
+        WHERE se.token_hash = ? AND se.expires_at > datetime('now')
+          AND (se.profile = 'admin'
+            OR (se.profile = 'student' AND EXISTS (SELECT 1 FROM students WHERE id = se.user_id))
+            OR (se.profile = 'driver' AND EXISTS (SELECT 1 FROM drivers WHERE id = se.user_id)))`, [tokenHash]);
+    },
+
+    async deleteSession(tokenHash: string): Promise<void> {
+      await run("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]);
+    },
+
+    // Motorista dono da van de uma reserva
+    async bookingDriverId(id: number): Promise<number> {
+      const row = await get<{ driverId: number }>("SELECT driver_id AS driverId FROM bookings WHERE id = ?", [id]);
+      if (!row) throw new ApiError(404, "Reserva não encontrada.");
+      return row.driverId;
+    },
+
     // Visão geral de todas as tabelas para a página de administração (/admin)
     async adminOverview() {
       const drivers = await all<DriverRow & { createdAt: string }>(
@@ -416,9 +471,10 @@ function createRepository(db: Client) {
         return true;
       });
       if (!seeded) return;
-      const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip" });
-      await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar" });
-      await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens" });
+      const passwordHash = hashPasswordSync(DEMO_PASSWORD);
+      const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
+      await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
+      await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
       const passengers: [string, string, string, string, string, BookingStatus][] = [
         ["Mariana Costa", "mariana@email.com", "Jd. Europa", "UniFacens", "17:40", "Confirmado"],
         ["Lucas Ribeiro", "lucas@email.com", "Vila Hortência", "Fatec", "17:55", "Confirmado"],
@@ -426,7 +482,7 @@ function createRepository(db: Client) {
         ["Pedro Martins", "pedro@email.com", "Jd. Faculdade", "Unip", "18:20", "Confirmado"],
       ];
       for (const [name, email, address, college, pickupTime, status] of passengers) {
-        const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000" });
+        const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
         const booking = await repo.createBooking({ studentId: student.id, driverId: carlos.id });
         await repo.updateBooking(booking.id, { status, pickupTime });
       }
