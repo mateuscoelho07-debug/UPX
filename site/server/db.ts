@@ -147,7 +147,9 @@ function splitList(value: unknown): string[] {
   return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
 }
 
-const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
+// Faculdades da região de Sorocaba (os 5 primeiros nomes já existem nos bancos publicados; não renomear).
+// Unesp, IFSP, PUC-SP e Ceunsp têm campi na região (Sorocaba, Itu/Salto e cidades vizinhas).
+export const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip", "Unesp", "IFSP", "PUC-SP", "Anhanguera", "ESAMC", "Fadi", "Ceunsp"];
 
 // Vans FICTÍCIAS de demonstração: cobrem toda a região de Sorocaba e todas as faculdades,
 // para a busca nunca ficar vazia enquanto não há motoristas reais. São criadas sempre
