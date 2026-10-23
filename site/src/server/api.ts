@@ -204,11 +204,17 @@ export function createApp(
     return repo.listVans({ studentId: student.id });
   }));
 
-  // Estudante reserva vaga para si mesmo
+  // Página de uma van (estudante logado, só vans da faculdade dele)
+  app.get("/api/vans/:id", route((req, res) => repo.vanDetail(id(req.params.id), requireUser(res, "student").id)));
+
+  // Estudante reserva vaga para si mesmo, numa van só (replace: true troca a van atual por esta)
   app.post("/api/bookings", route((req, res) => {
     const student = requireUser(res, "student");
-    return repo.createBooking({ studentId: student.id, driverId: body(req).driverId });
+    const { driverId, replace } = body(req) as Record<string, unknown>;
+    return repo.createBooking({ studentId: student.id, driverId: driverId as number, replace });
   }));
+  // Estudante cancela a própria reserva
+  app.post("/api/bookings/:id/cancel", route((req, res) => repo.cancelBooking(requireUser(res, "student").id, id(req.params.id)), 200));
   // Só o motorista da van confirma ou recusa a reserva
   app.patch("/api/bookings/:id", route(async (req, res) => {
     const bookingId = id(req.params.id);
