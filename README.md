@@ -33,7 +33,7 @@ O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
 
 | Tabela | O que guarda |
 | --- | --- |
-| `colleges` | Faculdades (UniFacens, Fatec, Ufscar, Uniso, Unip e as que os motoristas cadastrarem) |
+| `colleges` | Faculdades da região de Sorocaba (UniFacens, Fatec, Ufscar, Uniso, Unip, Unesp, IFSP, PUC-SP, Anhanguera, ESAMC, Fadi, Ceunsp) e as que os motoristas cadastrarem |
 | `students` | Estudantes: nome, celular, e-mail, endereço, faculdade e hash da senha |
 | `drivers` | Motoristas e vans: modelo, placa, lugares, horário de saída, nota e hash da senha |
 | `driver_cities` | Cidades por onde cada motorista passa, na ordem da rota |

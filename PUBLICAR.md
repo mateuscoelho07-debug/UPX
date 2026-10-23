@@ -27,7 +27,7 @@ Você não precisa mexer nesses arquivos.
 
 Guarde a URL e o token num lugar seguro. O token é como uma senha do banco: nunca coloque no GitHub.
 
-Não precisa criar tabelas nem cadastrar faculdades: o RotaU cria as tabelas e a lista de faculdades (UniFacens, Fatec, Ufscar, Uniso e Unip) sozinho na primeira visita.
+Não precisa criar tabelas nem cadastrar faculdades: o RotaU cria as tabelas e a lista de 12 faculdades da região de Sorocaba (UniFacens, Fatec, Ufscar, Uniso, Unip, Unesp, IFSP, PUC-SP, Anhanguera, ESAMC, Fadi e Ceunsp) sozinho na primeira visita. Se o banco já existia, as faculdades novas entram sozinhas na próxima publicação.
 
 ## Passo 2: criar a conta na Vercel e importar o projeto
 
@@ -61,7 +61,7 @@ Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 
 ## Vans de demonstração (fictícias)
 
-Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de demonstração** que cobrem toda a região de Sorocaba (Centro e as quatro zonas de Sorocaba, Votorantim, Itu, Salto, Porto Feliz, Boituva, Tatuí, Iperó, Itapetininga, São Roque, Mairinque e outras cidades vizinhas) e atendem **todas as faculdades** da lista, inclusive as que forem cadastradas depois.
+Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de demonstração** que cobrem toda a região de Sorocaba (Centro e as quatro zonas de Sorocaba, Votorantim, Itu, Salto, Porto Feliz, Boituva, Tatuí, Iperó, Itapetininga, São Roque, Mairinque e outras cidades vizinhas) e atendem **todas as 12 faculdades** da lista, inclusive as que forem cadastradas depois.
 
 - Elas aparecem com **"(demo)"** no nome do motorista. Os motoristas não existem.
 - São criadas mesmo com `SEED=false`, e só uma vez (publicar de novo não duplica).
@@ -87,7 +87,7 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 ## Se algo der errado
 
 - **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
-- **A lista de faculdades do cadastro está vazia:** isso acontecia em versões antigas do site com `SEED=false`. Na versão atual, a lista é criada sozinha. Depois que a publicação mais recente estiver **Ready**, abra o site e recarregue a página (`Ctrl + Shift + R`). Se ainda estiver vazia, abra `https://SEU-ENDERECO/api/colleges`: deve aparecer uma lista com 5 faculdades. Se aparecer um erro, me mande o texto.
+- **A lista de faculdades do cadastro está vazia:** isso acontecia em versões antigas do site com `SEED=false`. Na versão atual, a lista é criada sozinha. Depois que a publicação mais recente estiver **Ready**, abra o site e recarregue a página (`Ctrl + Shift + R`). Se ainda estiver vazia, abra `https://SEU-ENDERECO/api/colleges`: deve aparecer uma lista com 12 faculdades. Se aparecer um erro, me mande o texto.
 - **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
 - **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `site` (Passo 2).
 - **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_PASSWORD` não foi criada (nesse caso o painel deveria aparecer desativado). Crie e faça **Redeploy**.

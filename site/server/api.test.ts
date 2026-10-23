@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createApp } from "./index.ts";
-import { DEMO_PASSWORD, DEMO_VAN_DOMAIN, openDatabase } from "./db.ts";
+import { DEMO_PASSWORD, DEMO_VAN_DOMAIN, defaultColleges, openDatabase } from "./db.ts";
 
 let server: Server;
 let base: string;
@@ -50,10 +50,11 @@ const newStudent = {
   address: "Rua A, 10, Votorantim", college: "ufscar",
 };
 
-test("lista as faculdades do seed", async () => {
+test("lista as faculdades da região", async () => {
   const { status, body } = await call("GET", "/colleges");
   assert.equal(status, 200);
-  assert.deepEqual(body.map((c: { name: string }) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
+  assert.deepEqual(body.map((c: { name: string }) => c.name).sort(), [...defaultColleges].sort());
+  assert.equal(body.length, 12);
 });
 
 test("busca registra a pesquisa e conta as vans", async () => {
@@ -63,7 +64,7 @@ test("busca registra a pesquisa e conta as vans", async () => {
 });
 
 test("vans de demonstração atendem todas as faculdades e não aceitam login", async () => {
-  for (const college of ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"]) {
+  for (const college of defaultColleges) {
     const { body } = await call("GET", `/vans?college=${college}`);
     const demo = body.filter((van: { driver: string }) => van.driver.endsWith("(demo)"));
     assert.equal(demo.length, 11, college);
@@ -248,7 +249,7 @@ test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo"
   }
   await repo.ensureColleges(); // rodar de novo não duplica
   const colleges = await repo.listColleges();
-  assert.deepEqual(colleges.map((c) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
+  assert.deepEqual(colleges.map((c) => c.name).sort(), [...defaultColleges].sort());
   const overview = await repo.adminOverview();
   assert.equal(overview.students.length, 0);
   // só as vans de demonstração, mesmo com SEED=false
