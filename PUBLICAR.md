@@ -45,19 +45,18 @@ Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 | --- | --- | --- |
 | `DATABASE_URL` | a URL do Turso (`libsql://...`) | Onde o banco está. |
 | `DATABASE_AUTH_TOKEN` | o token do Turso | Senha de acesso ao banco. |
-| `ADMIN_TOKEN` | uma senha forte inventada por você | Protege o painel `/admin`. Sem ela, qualquer pessoa vê todos os dados. |
-| `SEED` | `false` | O banco começa vazio, sem os motoristas e estudantes de exemplo. Se quiser os exemplos para demonstrar o site, não crie esta variável. |
+| `ADMIN_PASSWORD` | uma senha forte inventada por você | Senha do painel `/admin`. Sem ela, o painel fica desativado. |
+| `TRUST_PROXY` | `1` | Faz o login funcionar direito atrás do HTTPS da Vercel (cookie seguro e limite de tentativas por visitante). |
+| `SEED` | `false` | **Importante:** sem isso o banco ganha contas de exemplo com senha conhecida (`rotau1234`). |
 
 Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
-
-Se o projeto de login com senha já tiver sido juntado ao site, o guia dessa parte (README, seção "Login e segurança") pode pedir variáveis a mais, como `ADMIN_PASSWORD` e `TRUST_PROXY=1`. Crie também essas.
 
 ## Passo 4: conferir se funcionou
 
 1. Quando a Vercel mostrar **Congratulations**, clique em **Visit** (ou no endereço `rotau-xxxx.vercel.app`).
 2. O site do RotaU deve abrir. Abra também `https://SEU-ENDERECO/api/health`: deve aparecer `{"ok":true}`.
-3. Faça um cadastro de teste. No painel do Turso (aba **Data** do banco), as tabelas `students` e `drivers` devem mostrar o cadastro.
-4. O painel de administração fica em `https://SEU-ENDERECO/admin` e pede a senha configurada.
+3. Faça um cadastro de teste (estudante ou motorista, com senha) e depois saia e entre de novo com o mesmo e-mail e senha. No painel do Turso (aba **Data** do banco), as tabelas `students` e `drivers` devem mostrar o cadastro.
+4. O painel de administração fica em `https://SEU-ENDERECO/admin` e pede a senha configurada em `ADMIN_PASSWORD`.
 
 ## Passo 5 (opcional): domínio próprio
 
@@ -78,7 +77,7 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 - **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
 - **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
 - **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `Site para RotaU` (Passo 2).
-- **O painel `/admin` abre sem pedir senha:** a variável de senha do painel não foi criada. Crie e faça **Redeploy**.
+- **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_PASSWORD` não foi criada (nesse caso o painel deveria aparecer desativado). Crie e faça **Redeploy**.
 - **Variáveis novas não têm efeito:** a Vercel só lê variáveis novas em publicações novas. Sempre faça **Redeploy** depois de mudar.
 
 ## Desenvolvimento no seu computador
