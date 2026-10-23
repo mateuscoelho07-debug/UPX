@@ -1,8 +1,7 @@
 // Página de administração (/admin): mostra o conteúdo do banco, somente leitura.
-// ATENÇÃO: ainda não há login. Use localmente; antes de publicar o site,
-// defina ADMIN_TOKEN no servidor ou implemente autenticação de verdade.
+// Exige a senha definida na variável ADMIN_PASSWORD do servidor.
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, type AdminOverview, type AdminRow } from "./api";
+import { api, ApiRequestError, type AdminOverview, type AdminRow } from "./api";
 
 type TableKey = "colleges" | "students" | "drivers" | "bookings" | "searches";
 
@@ -51,48 +50,51 @@ function formatCell(column: string, value: AdminRow[string]) {
   return String(value);
 }
 
-function readToken() {
-  try {
-    return sessionStorage.getItem("rotau.adminToken") ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export default function AdminPage() {
   const [data, setData] = useState<AdminOverview | null>(null);
   const [active, setActive] = useState<TableKey>("students");
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(readToken);
-  const [needsToken, setNeedsToken] = useState(false);
+  const [password, setPassword] = useState("");
+  const [needsLogin, setNeedsLogin] = useState(false);
 
-  const load = useCallback((currentToken: string) => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    api.adminOverview(currentToken || undefined)
+    api.adminOverview()
       .then((overview) => {
         setData(overview);
-        setNeedsToken(false);
+        setNeedsLogin(false);
       })
       .catch((err: Error) => {
-        if (err.message.includes("Token")) setNeedsToken(true);
-        setError(err.message);
+        // 401/403: falta entrar como administrador; 503: painel desativado no servidor
+        const status = err instanceof ApiRequestError ? err.status : 0;
+        setData(null);
+        setNeedsLogin(status === 401 || status === 403);
+        setError(status === 401 || status === 403 ? null : err.message);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => load(readToken()), [load]);
+  useEffect(load, [load]);
 
-  function submitToken(event: FormEvent) {
+  async function submitLogin(event: FormEvent) {
     event.preventDefault();
+    setError(null);
     try {
-      sessionStorage.setItem("rotau.adminToken", token);
-    } catch {
-      // sem armazenamento: o token vale só nesta visita
+      await api.adminLogin(password);
+      setPassword("");
+      load();
+    } catch (err) {
+      setError((err as Error).message);
     }
-    load(token);
+  }
+
+  async function logout() {
+    await api.logout().catch(() => {});
+    setData(null);
+    setNeedsLogin(true);
   }
 
   const table = tables.find((item) => item.key === active)!;
@@ -113,10 +115,13 @@ export default function AdminPage() {
             <span className="ml-2 hidden rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white sm:inline">Admin</span>
           </div>
           <div className="flex items-center gap-3">
-            <button className="btn-secondary whitespace-nowrap !px-4 !py-2.5 text-sm" onClick={() => load(token)} disabled={loading}>
-              {loading ? "Atualizando..." : "Atualizar"}
-            </button>
+            {data && (
+              <button className="btn-secondary whitespace-nowrap !px-4 !py-2.5 text-sm" onClick={load} disabled={loading}>
+                {loading ? "Atualizando..." : "Atualizar"}
+              </button>
+            )}
             <a className="btn-secondary whitespace-nowrap !px-4 !py-2.5 text-sm" href="/">Ver site</a>
+            {data && <button className="text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={logout}>Sair</button>}
           </div>
         </div>
       </header>
@@ -126,20 +131,14 @@ export default function AdminPage() {
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Painel de administração</h1>
         <p className="mt-2 text-slate-600">Tudo o que está salvo no banco do RotaU, somente para consulta.</p>
 
-        {data && !data.protected && (
-          <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            <strong>Uso local:</strong> este painel ainda não tem login. Antes de colocar o site no ar, defina a variável <code className="font-mono">ADMIN_TOKEN</code> no servidor para exigir uma senha.
-          </p>
-        )}
-
-        {needsToken && (
-          <form className="mt-6 flex max-w-md gap-3" onSubmit={submitToken}>
-            <input className="form-control !pl-4" type="password" placeholder="Token de administrador" value={token} onChange={(e) => setToken(e.target.value)} />
+        {needsLogin && (
+          <form className="mt-6 flex max-w-md gap-3" onSubmit={submitLogin}>
+            <input className="form-control !pl-4" type="password" required autoComplete="current-password" placeholder="Senha de administrador" value={password} onChange={(e) => setPassword(e.target.value)} />
             <button className="btn-primary" type="submit">Entrar</button>
           </form>
         )}
 
-        {error && !needsToken && (
+        {error && (
           <p className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">{error}</p>
         )}
 

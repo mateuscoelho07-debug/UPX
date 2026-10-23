@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, loadSession, saveSession, type BookingStatus, type DriverDashboardData, type Passenger, type Session, type Student, type Van } from "./api";
+import { api, ApiRequestError, type BookingStatus, type DriverDashboardData, type Passenger, type Session, type Student, type Van } from "./api";
 
 type IconName =
   | "arrow"
@@ -8,6 +8,7 @@ type IconName =
   | "clock"
   | "close"
   | "location"
+  | "lock"
   | "route"
   | "search"
   | "shield"
@@ -24,6 +25,7 @@ function Icon({ name, className = "size-5" }: { name: IconName; className?: stri
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     location: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+    lock: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
     route: <><circle cx="6" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 18h3a3 3 0 0 0 0-6h2a3 3 0 0 0 3-3V8" /></>,
     search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
     shield: <><path d="M12 3 5 6v5c0 4.5 2.8 8 7 10 4.2-2 7-5.5 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></>,
@@ -73,13 +75,21 @@ function Field({
 
 const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
 
+type DashboardProps = { onBack: () => void; onLogout: () => void };
+
+// Sessão expirada ou encerrada em outro lugar: volta para o início deslogado
+function handleError(err: Error, setError: (message: string) => void, onLogout: () => void) {
+  if (err instanceof ApiRequestError && err.status === 401) onLogout();
+  else setError(err.message);
+}
+
 function DashboardHeader({
   profile,
   onBack,
+  onLogout,
 }: {
   profile: "student" | "driver";
-  onBack: () => void;
-}) {
+} & DashboardProps) {
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
@@ -90,6 +100,9 @@ function DashboardHeader({
           </span>
           <button className="btn-secondary !px-4 !py-2.5 text-sm" onClick={onBack}>
             Voltar ao início
+          </button>
+          <button className="text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={onLogout}>
+            Sair
           </button>
         </div>
       </div>
@@ -115,7 +128,7 @@ function StatusMessage({ loading, error, onRetry }: { loading: boolean; error: s
   );
 }
 
-function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () => void }) {
+function DriverDashboard({ driverId, onBack, onLogout }: { driverId: number } & DashboardProps) {
   const [data, setData] = useState<DriverDashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,9 +138,9 @@ function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () =>
     setError(null);
     api.driverDashboard(driverId)
       .then(setData)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => handleError(err, setError, onLogout))
       .finally(() => setLoading(false));
-  }, [driverId]);
+  }, [driverId, onLogout]);
 
   useEffect(load, [load]);
 
@@ -136,7 +149,7 @@ function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () =>
       await api.updateBooking(passenger.bookingId, { status });
       load();
     } catch (err) {
-      setError((err as Error).message);
+      handleError(err as Error, setError, onLogout);
     }
   }
 
@@ -145,7 +158,7 @@ function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () =>
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <DashboardHeader profile="driver" onBack={onBack} />
+      <DashboardHeader profile="driver" onBack={onBack} onLogout={onLogout} />
       <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
@@ -206,7 +219,7 @@ function DriverDashboard({ driverId, onBack }: { driverId: number; onBack: () =>
   );
 }
 
-function StudentDashboard({ studentId, onBack }: { studentId: number; onBack: () => void }) {
+function StudentDashboard({ studentId, onBack, onLogout }: { studentId: number } & DashboardProps) {
   const [student, setStudent] = useState<Student | null>(null);
   const [vans, setVans] = useState<Van[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -215,29 +228,29 @@ function StudentDashboard({ studentId, onBack }: { studentId: number; onBack: ()
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([api.student(studentId), api.vans(studentId)])
+    Promise.all([api.student(studentId), api.vans()])
       .then(([studentData, vansData]) => {
         setStudent(studentData);
         setVans(vansData);
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => handleError(err, setError, onLogout))
       .finally(() => setLoading(false));
-  }, [studentId]);
+  }, [studentId, onLogout]);
 
   useEffect(load, [load]);
 
   async function book(van: Van) {
     try {
-      await api.book(studentId, van.id);
+      await api.book(van.id);
       load();
     } catch (err) {
-      setError((err as Error).message);
+      handleError(err as Error, setError, onLogout);
     }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <DashboardHeader profile="student" onBack={onBack} />
+      <DashboardHeader profile="student" onBack={onBack} onLogout={onLogout} />
       <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
         <div className="max-w-2xl">
           <span className="section-tag">Rotas para você</span>
@@ -295,17 +308,25 @@ function StudentDashboard({ studentId, onBack }: { studentId: number; onBack: ()
 
 export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
+  const [mode, setMode] = useState<"signup" | "login">("signup");
   const [profile, setProfile] = useState<"student" | "driver">("student");
   const [colleges, setColleges] = useState<string[]>(defaultColleges);
   const [search, setSearch] = useState({ address: "", college: "" });
   const [searchResult, setSearchResult] = useState<{ college: string; count: number } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [session, setSession] = useState<Session | null>(loadSession);
+  const [session, setSession] = useState<Session | null>(null);
   const [registered, setRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<Session | null>(null);
   const [apiOffline, setApiOffline] = useState(false);
+
+  // Recupera a sessão do cookie (o painel de admin tem login próprio)
+  useEffect(() => {
+    api.me()
+      .then((me) => setSession(me.profile === "admin" ? null : me))
+      .catch(() => setSession(null));
+  }, []);
 
   useEffect(() => {
     api.colleges()
@@ -319,11 +340,17 @@ export default function App() {
       });
   }, []);
 
-  function openSignup(type: "student" | "driver") {
+  function openSignup(type: "student" | "driver", modalMode: "signup" | "login" = "signup") {
     setProfile(type);
+    setMode(modalMode);
     setRegistered(false);
     setSignupError(null);
     setModalOpen(true);
+  }
+
+  function switchMode(modalMode: "signup" | "login") {
+    setMode(modalMode);
+    setSignupError(null);
   }
 
   async function handleSearch(event: FormEvent) {
@@ -341,15 +368,21 @@ export default function App() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const field = (name: string) => String(form.get(name) ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    if (password !== String(form.get("passwordConfirm") ?? "")) {
+      setSignupError("As senhas não conferem.");
+      return;
+    }
     setSubmitting(true);
     setSignupError(null);
     try {
       const created = profile === "student"
-        ? await api.createStudent({ name: field("name"), phone: field("phone"), email: field("email"), address: field("address"), college: field("college") })
+        ? await api.createStudent({ name: field("name"), phone: field("phone"), email: field("email"), password, address: field("address"), college: field("college") })
         : await api.createDriver({
             name: field("name"),
             phone: field("phone"),
             email: field("email"),
+            password,
             vanModel: field("vanModel"),
             plate: field("plate"),
             capacity: Number(field("capacity")),
@@ -357,9 +390,7 @@ export default function App() {
             cities: field("cities"),
             colleges: field("colleges"),
           });
-      const newSession: Session = { profile, id: created.id };
-      saveSession(newSession);
-      setSession(newSession);
+      setSession({ profile, id: created.id, name: created.name });
       setRegistered(true);
     } catch (err) {
       setSignupError((err as Error).message);
@@ -368,24 +399,41 @@ export default function App() {
     }
   }
 
-  function openDashboard() {
-    if (!session) return;
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSubmitting(true);
+    setSignupError(null);
+    try {
+      const me = await api.login(profile, String(form.get("email") ?? "").trim(), String(form.get("password") ?? ""));
+      setSession(me);
+      openDashboard(me);
+    } catch (err) {
+      setSignupError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openDashboard(current = session) {
+    if (!current) return;
     setModalOpen(false);
-    setDashboard(session);
+    setDashboard(current);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function logout() {
-    saveSession(null);
+  const logout = useCallback(() => {
+    api.logout().catch(() => {});
     setSession(null);
-  }
+    setDashboard(null);
+  }, []);
 
   if (dashboard?.profile === "driver") {
-    return <DriverDashboard driverId={dashboard.id} onBack={() => setDashboard(null)} />;
+    return <DriverDashboard driverId={dashboard.id} onBack={() => setDashboard(null)} onLogout={logout} />;
   }
 
   if (dashboard?.profile === "student") {
-    return <StudentDashboard studentId={dashboard.id} onBack={() => setDashboard(null)} />;
+    return <StudentDashboard studentId={dashboard.id} onBack={() => setDashboard(null)} onLogout={logout} />;
   }
 
   return (
@@ -396,7 +444,7 @@ export default function App() {
         </div>
       )}
       <header className="relative z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
           <Logo />
           <nav className="hidden items-center gap-8 md:flex" aria-label="Navegação principal">
             <a className="nav-link" href="#como-funciona">Como funciona</a>
@@ -405,15 +453,21 @@ export default function App() {
           </nav>
           {session ? (
             <div className="flex items-center gap-2">
-              <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={openDashboard}>
+              <span className="hidden text-sm font-semibold text-slate-600 sm:inline">Olá, {session.name.split(" ")[0]}</span>
+              <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={() => openDashboard()}>
                 Meu painel
               </button>
               <button className="text-sm font-semibold text-slate-500 hover:text-slate-800" onClick={logout}>Sair</button>
             </div>
           ) : (
-            <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={() => openSignup("student")}>
-              Criar conta
-            </button>
+            <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+              <button className="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-900" onClick={() => openSignup("student", "login")}>
+                Entrar
+              </button>
+              <button className="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" onClick={() => openSignup("student")}>
+                Criar conta
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -576,10 +630,14 @@ export default function App() {
       </footer>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Criar conta">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={mode === "login" ? "Entrar" : "Criar conta"}>
           <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
             <div className="flex items-start justify-between">
-              <div><p className="text-2xl font-extrabold text-slate-950">Crie sua conta</p><p className="mt-1 text-sm text-slate-500">Comece agora, é rápido e gratuito.</p></div>
+              {mode === "login" ? (
+                <div><p className="text-2xl font-extrabold text-slate-950">Entrar</p><p className="mt-1 text-sm text-slate-500">Acesse seu painel com e-mail e senha.</p></div>
+              ) : (
+                <div><p className="text-2xl font-extrabold text-slate-950">Crie sua conta</p><p className="mt-1 text-sm text-slate-500">Comece agora, é rápido e gratuito.</p></div>
+              )}
               <button className="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-slate-200" onClick={() => setModalOpen(false)} aria-label="Fechar"><Icon name="close" /></button>
             </div>
             {registered ? (
@@ -589,7 +647,7 @@ export default function App() {
                 <p className="mx-auto mt-2 max-w-sm text-slate-600">
                   {profile === "driver" ? "Seu perfil foi criado. Veja agora os passageiros da sua rota de hoje." : "Seu perfil foi criado. Veja agora as vans disponíveis para a sua rota."}
                 </p>
-                <button className="btn-primary mx-auto mt-7" onClick={openDashboard}>
+                <button className="btn-primary mx-auto mt-7" onClick={() => openDashboard()}>
                   {profile === "driver" ? "Ver passageiros" : "Ver vans disponíveis"} <Icon name="arrow" />
                 </button>
               </div>
@@ -599,12 +657,25 @@ export default function App() {
                   <button className={`profile-tab ${profile === "student" ? "active" : ""}`} onClick={() => setProfile("student")}><Icon name="student" /> Estudante</button>
                   <button className={`profile-tab ${profile === "driver" ? "active" : ""}`} onClick={() => setProfile("driver")}><Icon name="van" /> Motorista</button>
                 </div>
+                {mode === "login" ? (
+                <form className="mt-6 space-y-4" onSubmit={handleLogin}>
+                  <Field label="E-mail" icon="user"><input className="form-control" name="email" required type="email" autoComplete="email" placeholder="voce@email.com" /></Field>
+                  <Field label="Senha" icon="lock"><input className="form-control" name="password" required type="password" autoComplete="current-password" placeholder="Sua senha" /></Field>
+                  {signupError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{signupError}</p>}
+                  <button className="btn-primary w-full justify-center disabled:opacity-60" type="submit" disabled={submitting}>{submitting ? "Entrando..." : <>Entrar como {profile === "student" ? "estudante" : "motorista"} <Icon name="arrow" /></>}</button>
+                  <p className="text-center text-sm text-slate-600">Ainda não tem conta? <button type="button" className="font-bold text-blue-600 hover:underline" onClick={() => switchMode("signup")}>Criar conta</button></p>
+                </form>
+                ) : (
                 <form className="mt-6 space-y-4" onSubmit={handleSignup}>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Nome completo" icon="user"><input className="form-control" name="name" required placeholder="Seu nome" /></Field>
                     <Field label="Celular" icon="user"><input className="form-control" name="phone" required type="tel" placeholder="(00) 00000-0000" /></Field>
                   </div>
-                  <Field label="E-mail" icon="user"><input className="form-control" name="email" required type="email" placeholder="voce@email.com" /></Field>
+                  <Field label="E-mail" icon="user"><input className="form-control" name="email" required type="email" autoComplete="email" placeholder="voce@email.com" /></Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Senha" icon="lock"><input className="form-control" name="password" required type="password" minLength={8} autoComplete="new-password" placeholder="Mínimo 8 caracteres" /></Field>
+                    <Field label="Confirme a senha" icon="lock"><input className="form-control" name="passwordConfirm" required type="password" minLength={8} autoComplete="new-password" placeholder="Repita a senha" /></Field>
+                  </div>
                   {profile === "student" ? (
                     <>
                       <Field label="Seu endereço" icon="location"><input className="form-control" name="address" required placeholder="Rua, número, bairro e cidade" defaultValue={search.address} /></Field>
@@ -635,7 +706,9 @@ export default function App() {
                   </label>
                   {signupError && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{signupError}</p>}
                   <button className="btn-primary w-full justify-center disabled:opacity-60" type="submit" disabled={submitting}>{submitting ? "Salvando..." : <>Criar conta como {profile === "student" ? "estudante" : "motorista"} <Icon name="arrow" /></>}</button>
+                  <p className="text-center text-sm text-slate-600">Já tem conta? <button type="button" className="font-bold text-blue-600 hover:underline" onClick={() => switchMode("login")}>Entrar</button></p>
                 </form>
+                )}
               </>
             )}
           </div>
