@@ -1,13 +1,13 @@
 # UPX — RotaU
 
-O RotaU conecta estudantes a motoristas de vans universitárias. O site fica em [`Site para RotaU/`](Site%20para%20RotaU).
+O RotaU conecta estudantes a motoristas de vans universitárias. O site fica em [`site/`](site).
 
 ## Como rodar
 
 Requer Node.js 22.18 ou mais novo (a API é escrita em TypeScript, executado direto pelo Node; o banco é SQLite via libSQL) e pnpm.
 
 ```bash
-cd "Site para RotaU"
+cd site
 pnpm install
 pnpm dev        # sobe a API (porta 3001) e o site (porta 8443) juntos
 ```
@@ -29,7 +29,7 @@ O passo a passo para colocar o site no ar (gratuito, com Vercel e Turso, incluin
 
 ## Banco de dados
 
-O esquema completo está em [`server/schema.sql`](Site%20para%20RotaU/server/schema.sql):
+O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
 
 | Tabela | O que guarda |
 | --- | --- |
