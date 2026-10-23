@@ -27,7 +27,7 @@ Você não precisa mexer nesses arquivos.
 
 Guarde a URL e o token num lugar seguro. O token é como uma senha do banco: nunca coloque no GitHub.
 
-Não precisa criar tabelas: o RotaU cria tudo sozinho na primeira visita.
+Não precisa criar tabelas nem cadastrar faculdades: o RotaU cria as tabelas e a lista de faculdades (UniFacens, Fatec, Ufscar, Uniso e Unip) sozinho na primeira visita.
 
 ## Passo 2: criar a conta na Vercel e importar o projeto
 
@@ -47,7 +47,7 @@ Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 | `DATABASE_AUTH_TOKEN` | o token do Turso | Senha de acesso ao banco. |
 | `ADMIN_PASSWORD` | uma senha forte inventada por você | Senha do painel `/admin`. Sem ela, o painel fica desativado. |
 | `TRUST_PROXY` | `1` | Faz o login funcionar direito atrás do HTTPS da Vercel (cookie seguro e limite de tentativas por visitante). |
-| `SEED` | `false` | **Importante:** sem isso o banco ganha contas de exemplo com senha conhecida (`rotau1234`). |
+| `SEED` | `false` | **Importante:** sem isso o banco ganha motoristas e estudantes de exemplo com senha conhecida (`rotau1234`). As faculdades da lista do cadastro são criadas sempre, com ou sem esta variável. |
 
 Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 
@@ -75,6 +75,7 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 ## Se algo der errado
 
 - **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
+- **A lista de faculdades do cadastro está vazia:** isso acontecia em versões antigas do site com `SEED=false`. Na versão atual, a lista é criada sozinha. Depois que a publicação mais recente estiver **Ready**, abra o site e recarregue a página (`Ctrl + Shift + R`). Se ainda estiver vazia, abra `https://SEU-ENDERECO/api/colleges`: deve aparecer uma lista com 5 faculdades. Se aparecer um erro, me mande o texto.
 - **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
 - **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `site` (Passo 2).
 - **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_PASSWORD` não foi criada (nesse caso o painel deveria aparecer desativado). Crie e faça **Redeploy**.
