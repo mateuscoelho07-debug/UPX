@@ -1,0 +1,273 @@
+<div class="min-h-screen overflow-x-hidden bg-white text-slate-900">
+  @if (apiOffline()) {
+    <div class="bg-amber-100 px-5 py-2.5 text-center text-sm font-semibold text-amber-900">
+      O servidor do banco de dados não respondeu. Rode <code class="font-mono">pnpm dev</code> na pasta do site para subir a API junto.
+    </div>
+  }
+  <header class="relative z-20 border-b border-slate-100 bg-white/90 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
+      <app-logo />
+      <nav class="hidden items-center gap-8 md:flex" aria-label="Navegação principal">
+        <a class="nav-link" href="#como-funciona">Como funciona</a>
+        <a class="nav-link" href="#para-quem">Para quem é</a>
+        <a class="nav-link" href="#sobre">Sobre nós</a>
+      </nav>
+      @if (session(); as current) {
+        <div class="flex items-center gap-2">
+          <span class="hidden text-sm font-semibold text-slate-600 sm:inline">Olá, {{ firstName(current.name) }}</span>
+          <button class="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" (click)="openDashboard()">
+            Meu painel
+          </button>
+          <button class="text-sm font-semibold text-slate-500 hover:text-slate-800" (click)="logout()">Sair</button>
+        </div>
+      } @else {
+        <div class="flex shrink-0 items-center gap-3 sm:gap-4">
+          <button class="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-900" (click)="openSignup('student', 'login')">Entrar</button>
+          <button class="btn-secondary !mb-[10px] !ml-0 !mr-0 !mt-[10px] flex-row items-center justify-center !pb-2.5 !pl-5 !pr-5 !pt-2.5" (click)="openSignup('student')">
+            Criar conta
+          </button>
+        </div>
+      }
+    </div>
+  </header>
+
+  <main>
+    <section class="relative isolate overflow-hidden bg-blue-50/60">
+      <div class="hero-grid absolute inset-0 -z-10 opacity-60"></div>
+      <div class="absolute -right-40 -top-40 -z-10 size-[34rem] rounded-full bg-blue-200/40 blur-3xl"></div>
+      <div class="mx-auto grid max-w-7xl items-center gap-14 px-5 py-16 lg:grid-cols-[1.05fr_.95fr] lg:px-8 lg:py-24">
+        <div>
+          <div class="eyebrow">Seu caminho até a faculdade começa aqui</div>
+          <h1 class="mt-6 max-w-2xl text-4xl font-extrabold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-6xl">
+            A rota certa para o seu <span class="text-blue-600">futuro.</span>
+          </h1>
+          <p class="mt-6 max-w-xl text-lg leading-8 text-slate-600">
+            O RotaU conecta estudantes a motoristas de vans universitárias. Encontre uma rota segura, prática e que passa perto de você.
+          </p>
+          <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button class="btn-primary justify-center" (click)="scrollToSearch()">Encontrar minha rota <app-icon name="arrow" class="size-5" /></button>
+            <button class="btn-secondary" (click)="openSignup('driver')"><app-icon name="van" class="size-5" /> Sou motorista</button>
+          </div>
+          <div class="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium text-slate-600">
+            <span class="flex items-center gap-2"><app-icon name="check" class="size-4 text-blue-600" /> Cadastro gratuito</span>
+            <span class="flex items-center gap-2"><app-icon name="shield" class="size-4 text-blue-600" /> Perfis verificados</span>
+          </div>
+        </div>
+
+        <div id="buscar" class="relative scroll-mt-24">
+          <div class="route-orbit" aria-hidden="true">
+            <span class="absolute left-9 top-10 grid size-12 place-items-center rounded-2xl bg-white text-blue-600 shadow-xl"><app-icon name="student" class="size-5" /></span>
+            <span class="absolute bottom-8 right-8 grid size-12 place-items-center rounded-2xl bg-blue-600 text-white shadow-xl"><app-icon name="van" class="size-5" /></span>
+            <span class="absolute left-24 top-20 h-28 w-48 rounded-[50%] border-2 border-dashed border-blue-300"></span>
+          </div>
+          <form (submit)="handleSearch($event)" class="relative mx-auto max-w-lg rounded-3xl border border-white bg-white p-6 shadow-2xl shadow-blue-900/10 sm:p-8">
+            <div class="mb-7 flex items-start justify-between">
+              <div>
+                <p class="text-xl font-bold text-slate-950">Encontre sua van</p>
+                <p class="mt-1 text-sm text-slate-500">Informe seu ponto de partida e destino.</p>
+              </div>
+              <span class="grid size-11 place-items-center rounded-xl bg-blue-50 text-blue-600"><app-icon name="search" class="size-5" /></span>
+            </div>
+            <div class="space-y-5">
+              <app-field label="Onde você mora?" icon="location">
+                <input class="form-control" required placeholder="Rua, bairro ou cidade" [value]="search().address" (input)="setSearch('address', $event)" />
+              </app-field>
+              <app-field label="Qual é a sua faculdade?" icon="student">
+                <select class="form-control appearance-none" required (change)="setSearch('college', $event)">
+                  <option value="" disabled [selected]="!search().college">Selecione sua faculdade</option>
+                  @for (college of colleges(); track college) {
+                    <option [selected]="college === search().college">{{ college }}</option>
+                  }
+                </select>
+              </app-field>
+              <button class="btn-primary w-full justify-center" type="submit"><app-icon name="search" class="size-5" /> Buscar rotas disponíveis</button>
+            </div>
+            @if (searchResult(); as result) {
+              <div class="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+                <div class="flex gap-3">
+                  <span class="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-blue-600 text-white"><app-icon [name]="result.count > 0 ? 'check' : 'search'" class="size-4" /></span>
+                  @if (result.count > 0) {
+                    <div><strong class="block">Encontramos {{ result.count }} {{ result.count === 1 ? "rota" : "rotas" }} para a {{ result.college }}!</strong><span class="text-blue-700">Crie sua conta para ver motoristas e horários.</span></div>
+                  } @else {
+                    <div><strong class="block">Ainda não há vans para a {{ result.college }}.</strong><span class="text-blue-700">Crie sua conta e avisamos quando surgir uma rota.</span></div>
+                  }
+                </div>
+              </div>
+            }
+            @if (searchError()) {
+              <p class="mt-5 rounded-2xl bg-red-50 p-4 text-sm text-red-800">{{ searchError() }}</p>
+            }
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section id="como-funciona" class="scroll-mt-20 px-5 py-20 lg:px-8 lg:py-28">
+      <div class="mx-auto max-w-7xl">
+        <div class="mx-auto max-w-2xl text-center">
+          <span class="section-tag">Simples e rápido</span>
+          <h2 class="section-title">Da sua casa à faculdade, sem complicação</h2>
+          <p class="section-copy">Em poucos passos, encontre a melhor opção para a sua rotina universitária.</p>
+        </div>
+        <div class="mt-14 grid gap-6 md:grid-cols-3">
+          @for (step of steps; track step.number) {
+            <article class="step-card">
+              <span class="absolute right-6 top-5 text-5xl font-black text-slate-100">{{ step.number }}</span>
+              <span class="icon-box"><app-icon [name]="step.icon" class="size-5" /></span>
+              <h3 class="mt-6 text-lg font-bold text-slate-950">{{ step.title }}</h3>
+              <p class="mt-2 leading-7 text-slate-600">{{ step.text }}</p>
+            </article>
+          }
+        </div>
+      </div>
+    </section>
+
+    <section id="sobre" class="bg-slate-950 px-5 py-20 text-white lg:px-8 lg:py-24">
+      <div class="mx-auto grid max-w-7xl gap-14 lg:grid-cols-2 lg:items-center">
+        <div>
+          <span class="section-tag !border-blue-800 !bg-blue-950 !text-blue-300">Quem somos</span>
+          <h2 class="mt-5 max-w-xl text-3xl font-extrabold tracking-tight sm:text-4xl">Conectamos caminhos. Aproximamos oportunidades.</h2>
+          <p class="mt-5 max-w-xl text-lg leading-8 text-slate-300">
+            Somos uma plataforma criada para facilitar a mobilidade universitária. Aproximamos quem precisa chegar à faculdade de quem já faz esse caminho todos os dias.
+          </p>
+          <div class="mt-8 grid grid-cols-2 gap-4">
+            <div class="dark-stat"><strong>Mais acesso</strong><span>à educação</span></div>
+            <div class="dark-stat"><strong>Mais segurança</strong><span>no trajeto</span></div>
+          </div>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <article class="value-card sm:mt-8"><app-icon name="shield" class="size-7 text-blue-400" /><h3>Confiança</h3><p>Perfis completos para você escolher com tranquilidade.</p></article>
+          <article class="value-card"><app-icon name="route" class="size-7 text-blue-400" /><h3>Praticidade</h3><p>Todas as informações da rota reunidas em um só lugar.</p></article>
+          <article class="value-card sm:mt-8"><app-icon name="clock" class="size-7 text-blue-400" /><h3>Tempo</h3><p>Menos tempo procurando, mais tempo para seus planos.</p></article>
+          <article class="value-card"><app-icon name="student" class="size-7 text-blue-400" /><h3>Comunidade</h3><p>Uma rede feita para universitários e motoristas locais.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="para-quem" class="bg-blue-50 px-5 py-20 lg:px-8 lg:py-24">
+      <div class="mx-auto max-w-7xl">
+        <div class="text-center">
+          <span class="section-tag">Faça parte</span>
+          <h2 class="section-title">Escolha como você quer usar o RotaU</h2>
+        </div>
+        <div class="mx-auto mt-12 grid max-w-5xl gap-6 md:grid-cols-2">
+          <article class="profile-card">
+            <span class="icon-box"><app-icon name="student" class="size-5" /></span>
+            <p class="mt-6 text-sm font-bold uppercase tracking-widest text-blue-600">Para estudantes</p>
+            <h3 class="mt-2 text-2xl font-extrabold">Encontre seu transporte</h3>
+            <p class="mt-3 leading-7 text-slate-600">Cadastre seu endereço e faculdade para descobrir as vans que combinam com a sua rotina.</p>
+            <button class="btn-primary mt-7 w-full justify-center" (click)="openSignup('student')">Quero encontrar uma van <app-icon name="arrow" class="size-5" /></button>
+          </article>
+          <article class="profile-card border-blue-200 bg-blue-600 text-white">
+            <span class="grid size-12 place-items-center rounded-xl bg-[rgba(150,157,173,0.15)] text-blue-500"><app-icon name="van" class="size-5" /></span>
+            <p class="mt-6 text-sm font-bold uppercase tracking-widest text-blue-600">Para motoristas</p>
+            <h3 class="mt-2 text-2xl font-extrabold text-black">Divulgue suas rotas</h3>
+            <p class="mt-3 leading-7 text-slate-600">Cadastre sua van, cidades e faculdades atendidas para preencher suas vagas com facilidade.</p>
+            <button class="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 font-bold text-white transition hover:bg-blue-700" (click)="openSignup('driver')">Quero cadastrar minha van <app-icon name="arrow" class="size-5" /></button>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-200 bg-white px-5 py-8 lg:px-8">
+    <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 sm:flex-row">
+      <app-logo />
+      <div class="flex items-center gap-5 text-sm text-slate-500">
+        <p>© 2026 RotaU. Seu caminho para a universidade.</p>
+        <a class="font-semibold hover:text-slate-800" href="/admin">Admin</a>
+      </div>
+    </div>
+  </footer>
+
+  @if (modalOpen()) {
+    <div class="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" [attr.aria-label]="mode() === 'login' ? 'Entrar' : 'Criar conta'">
+      <div class="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
+        <div class="flex items-start justify-between">
+          @if (mode() === "login") {
+            <div><p class="text-2xl font-extrabold text-slate-950">Entrar</p><p class="mt-1 text-sm text-slate-500">Acesse seu painel com e-mail e senha.</p></div>
+          } @else {
+            <div><p class="text-2xl font-extrabold text-slate-950">Crie sua conta</p><p class="mt-1 text-sm text-slate-500">Comece agora, é rápido e gratuito.</p></div>
+          }
+          <button class="grid size-10 place-items-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-slate-200" (click)="modalOpen.set(false)" aria-label="Fechar"><app-icon name="close" class="size-5" /></button>
+        </div>
+        @if (registered()) {
+          <div class="py-12 text-center">
+            <span class="mx-auto grid size-16 place-items-center rounded-full bg-blue-100 text-blue-600"><app-icon name="check" class="size-8" /></span>
+            <h3 class="mt-5 text-2xl font-extrabold">Cadastro enviado!</h3>
+            <p class="mx-auto mt-2 max-w-sm text-slate-600">
+              {{ profile() === "driver" ? "Seu perfil foi criado. Veja agora os passageiros da sua rota de hoje." : "Seu perfil foi criado. Veja agora as vans disponíveis para a sua rota." }}
+            </p>
+            <button class="btn-primary mx-auto mt-7" (click)="openDashboard()">
+              {{ profile() === "driver" ? "Ver passageiros" : "Ver vans disponíveis" }} <app-icon name="arrow" class="size-5" />
+            </button>
+          </div>
+        } @else {
+          <div class="mt-7 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+            <button class="profile-tab" [class.active]="profile() === 'student'" (click)="profile.set('student')"><app-icon name="student" class="size-5" /> Estudante</button>
+            <button class="profile-tab" [class.active]="profile() === 'driver'" (click)="profile.set('driver')"><app-icon name="van" class="size-5" /> Motorista</button>
+          </div>
+          @if (mode() === "login") {
+            <form class="mt-6 space-y-4" (submit)="handleLogin($event)">
+              <app-field label="E-mail" icon="user"><input class="form-control" name="email" required type="email" autocomplete="email" placeholder="voce@email.com" /></app-field>
+              <app-field label="Senha" icon="lock"><input class="form-control" name="password" required type="password" autocomplete="current-password" placeholder="Sua senha" /></app-field>
+              @if (signupError()) {
+                <p class="rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ signupError() }}</p>
+              }
+              <button class="btn-primary w-full justify-center disabled:opacity-60" type="submit" [disabled]="submitting()">
+                @if (submitting()) { Entrando... } @else { Entrar como {{ profile() === "student" ? "estudante" : "motorista" }} <app-icon name="arrow" class="size-5" /> }
+              </button>
+              <p class="text-center text-sm text-slate-600">Ainda não tem conta? <button type="button" class="font-bold text-blue-600 hover:underline" (click)="switchMode('signup')">Criar conta</button></p>
+            </form>
+          } @else {
+            <form class="mt-6 space-y-4" (submit)="handleSignup($event)">
+              <div class="grid gap-4 sm:grid-cols-2">
+                <app-field label="Nome completo" icon="user"><input class="form-control" name="name" required placeholder="Seu nome" /></app-field>
+                <app-field label="Celular" icon="user"><input class="form-control" name="phone" required type="tel" placeholder="(00) 00000-0000" /></app-field>
+              </div>
+              <app-field label="E-mail" icon="user"><input class="form-control" name="email" required type="email" autocomplete="email" placeholder="voce@email.com" /></app-field>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <app-field label="Senha" icon="lock"><input class="form-control" name="password" required type="password" minlength="8" autocomplete="new-password" placeholder="Mínimo 8 caracteres" /></app-field>
+                <app-field label="Confirme a senha" icon="lock"><input class="form-control" name="passwordConfirm" required type="password" minlength="8" autocomplete="new-password" placeholder="Repita a senha" /></app-field>
+              </div>
+              @if (profile() === "student") {
+                <app-field label="Seu endereço" icon="location"><input class="form-control" name="address" required placeholder="Rua, número, bairro e cidade" [value]="search().address" /></app-field>
+                <app-field label="Faculdade onde estuda" icon="student">
+                  <select class="form-control appearance-none" name="college" required>
+                    <option value="" disabled [selected]="!search().college">Selecione sua faculdade</option>
+                    @for (college of colleges(); track college) {
+                      <option [selected]="college === search().college">{{ college }}</option>
+                    }
+                  </select>
+                </app-field>
+              } @else {
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <app-field label="Modelo da van" icon="van"><input class="form-control" name="vanModel" required placeholder="Ex.: Renault Master" /></app-field>
+                  <app-field label="Placa" icon="van"><input class="form-control" name="plate" required placeholder="ABC-1D23" /></app-field>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-3">
+                  <app-field label="Lugares na van" icon="user"><input class="form-control" name="capacity" required type="number" min="1" max="30" value="12" /></app-field>
+                  <app-field label="Saída da ida" icon="clock"><input class="form-control" name="departureTime" required type="time" value="17:30" /></app-field>
+                  <app-field label="Saída da volta" icon="clock"><input class="form-control" name="returnTime" required type="time" value="22:40" /></app-field>
+                </div>
+                <app-field label="Cidades por onde passa" icon="location"><input class="form-control" name="cities" required placeholder="Separe as cidades por vírgula" /></app-field>
+                <app-field label="Faculdades que atende" icon="student"><input class="form-control" name="colleges" required placeholder="Separe as faculdades por vírgula" /></app-field>
+              }
+              <label class="flex items-start gap-3 text-sm leading-6 text-slate-600">
+                <input class="mt-1 size-4 accent-blue-600" type="checkbox" required />
+                Aceito os termos de uso e a política de privacidade do RotaU.
+              </label>
+              @if (signupError()) {
+                <p class="rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ signupError() }}</p>
+              }
+              <button class="btn-primary w-full justify-center disabled:opacity-60" type="submit" [disabled]="submitting()">
+                @if (submitting()) { Salvando... } @else { Criar conta como {{ profile() === "student" ? "estudante" : "motorista" }} <app-icon name="arrow" class="size-5" /> }
+              </button>
+              <p class="text-center text-sm text-slate-600">Já tem conta? <button type="button" class="font-bold text-blue-600 hover:underline" (click)="switchMode('login')">Entrar</button></p>
+            </form>
+          }
+        }
+      </div>
+    </div>
+  }
+</div>

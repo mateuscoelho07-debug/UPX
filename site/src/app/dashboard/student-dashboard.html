@@ -1,0 +1,119 @@
+<div class="min-h-screen bg-slate-50 text-slate-900">
+  <app-dashboard-header profile="student" (logout)="logout.emit()" (notified)="refreshToday()" />
+  <main class="mx-auto max-w-7xl px-5 py-10 lg:px-8">
+    @if (student(); as current) {
+      <div class="flex items-center gap-4">
+        <span class="grid size-16 shrink-0 place-items-center rounded-full bg-blue-100 text-blue-700"><app-icon name="user" class="size-8" /></span>
+        <div>
+          <h1 class="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Olá, {{ firstName(current.name) }}</h1>
+          <p class="mt-1 font-semibold text-slate-600">{{ today()?.weekday }} · {{ current.college }}</p>
+        </div>
+      </div>
+
+      @if (today(); as day) {
+        <section class="mt-8 grid items-start gap-5 lg:grid-cols-2">
+          <article class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
+            <h2 class="text-xl font-extrabold text-slate-950">Você vai hoje?</h2>
+            <p class="mt-1 text-sm text-slate-500">Confirme para o motorista montar a rota do dia.</p>
+            <div class="mt-5 grid grid-cols-2 gap-3">
+              <button class="rounded-xl border-2 px-4 py-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                [class]="day.going === true ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200' : 'border-blue-600 bg-white text-blue-700 hover:bg-blue-50'"
+                [attr.aria-pressed]="day.going === true" [disabled]="!day.van || saving()" (click)="setGoing(true)">Vou hoje</button>
+              <button class="rounded-xl border-2 px-4 py-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                [class]="day.going === false ? 'border-slate-700 bg-slate-700 text-white' : 'border-blue-600 bg-white text-blue-700 hover:bg-blue-50'"
+                [attr.aria-pressed]="day.going === false" [disabled]="!day.van || saving()" (click)="setGoing(false)">Não vou hoje</button>
+            </div>
+            <p class="mt-4 text-sm" role="status" [class]="day.going === true ? 'font-semibold text-emerald-700' : 'text-slate-600'">
+              @if (!day.van) {
+                Reserve uma vaga numa van abaixo para confirmar presença todo dia.
+              } @else if (day.going === true) {
+                <app-icon name="check" class="mr-1 size-4 align-[-3px]" />Presença confirmada: você vai hoje.
+              } @else if (day.going === false) {
+                Você avisou que não vai hoje. O motorista já sabe.
+              } @else {
+                Você ainda não respondeu hoje.
+              }
+            </p>
+            @if (day.van?.status === "Aguardando") {
+              <p class="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Sua reserva ainda aguarda a confirmação do motorista.</p>
+            }
+            @if (presenceError()) {
+              <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ presenceError() }}</p>
+            }
+          </article>
+
+          <article class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
+            <h2 class="text-xl font-extrabold text-slate-950">Horário de hoje</h2>
+            @if (day.van; as van) {
+              <div class="mt-4 space-y-3">
+                @for (leg of day.legs; track leg.leg) {
+                  <div class="rounded-2xl border bg-slate-50 p-4" [class]="leg.eta ? 'border-blue-200 bg-blue-50' : 'border-slate-200'">
+                    <span class="text-xs font-bold text-slate-500">{{ leg.leg === "ida" ? "IDA · a van passa no seu ponto" : "VOLTA · a van deixa você em casa" }}</span>
+                    <p class="mt-1 text-slate-800">{{ legText(leg, day.going) }}</p>
+                  </div>
+                }
+              </div>
+              <p class="mt-4 text-slate-700">Motorista: {{ van.driver }} · embarque em {{ van.pickup }}{{ van.pickupTime ? " às " + van.pickupTime : "" }}</p>
+              <p class="mt-1 text-xs text-slate-500">
+                Estimativa baseada na rota de todos os alunos da van que vão hoje ({{ van.goingCount }} {{ van.goingCount === 1 ? "aluno" : "alunos" }}).
+              </p>
+            } @else {
+              <p class="mt-4 text-sm text-slate-600">Assim que você reservar uma vaga, os horários de ida e volta da sua van aparecem aqui.</p>
+            }
+          </article>
+        </section>
+      }
+    }
+
+    <div class="mt-12 max-w-2xl">
+      <span class="section-tag">Rotas para você</span>
+      <h2 class="mt-4 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Vans disponíveis</h2>
+      <p class="mt-2 text-slate-600">Encontramos motoristas com rotas próximas ao seu endereço e à sua faculdade.</p>
+    </div>
+
+    @if (student(); as current) {
+      <div class="mt-8 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-3">
+          <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><app-icon name="location" class="size-5" /></span>
+          <div><strong class="block text-sm text-blue-950">Saindo de {{ current.address }}</strong><span class="text-sm text-blue-700">Rotas para {{ current.college }}</span></div>
+        </div>
+      </div>
+    }
+
+    <app-status-message [loading]="loading() && !student()" [error]="error()" (retry)="load()" />
+
+    @if (student() && vans().length === 0) {
+      <p class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 text-center text-slate-600">Ainda não há vans atendendo a {{ student()!.college }}. Volte em breve!</p>
+    }
+
+    <section class="mt-6 grid gap-5 lg:grid-cols-3">
+      @for (van of vans(); track van.id; let index = $index) {
+        <article class="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200">
+          <div class="flex items-start justify-between gap-4">
+            <span class="grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600"><app-icon name="van" class="size-5" /></span>
+            @if (van.booked) {
+              <span class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Sua van</span>
+            } @else if (index === 0) {
+              <span class="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>
+            }
+          </div>
+          <h3 class="mt-5 text-lg font-extrabold text-slate-950">{{ van.driver }}</h3>
+          <p class="mt-1 text-sm text-slate-500">{{ van.vehicle }}</p>
+          <div class="my-5 space-y-3 border-y border-slate-100 py-5">
+            <p class="flex items-center gap-3 text-sm font-semibold text-slate-700"><app-icon name="route" class="size-5 text-blue-600" />{{ van.route }}</p>
+            <p class="flex items-center gap-3 text-sm text-slate-600"><app-icon name="clock" class="size-5 text-blue-600" />Saída às {{ van.time }}</p>
+          </div>
+          <div class="mb-5 flex items-center justify-between text-sm">
+            <span class="font-bold" [class]="van.freeSeats > 0 ? 'text-emerald-700' : 'text-red-600'">{{ van.freeSeats === 0 ? "Lotada" : van.freeSeats + " " + (van.freeSeats === 1 ? "vaga" : "vagas") }}</span>
+            <span class="font-semibold text-slate-600">★ {{ rating(van.rating) }}</span>
+          </div>
+          @if (van.booked) {
+            <p class="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-6 py-3.5 font-bold text-emerald-700"><app-icon name="check" class="size-5" /> Vaga reservada</p>
+          } @else {
+            <button class="btn-primary mt-auto w-full justify-center disabled:opacity-50" [disabled]="van.freeSeats === 0" (click)="book(van)">Reservar vaga <app-icon name="arrow" class="size-5" /></button>
+          }
+        </article>
+      }
+    </section>
+  </main>
+</div>

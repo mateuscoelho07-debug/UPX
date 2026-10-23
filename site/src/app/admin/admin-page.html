@@ -1,0 +1,88 @@
+<div class="min-h-screen bg-slate-50 text-slate-900">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 lg:px-8">
+      <div class="flex items-center gap-2.5">
+        <img class="h-11 w-16 rounded-xl object-cover shadow-lg shadow-blue-200" src="/rotau-logo.png" alt="" />
+        <span class="text-xl font-extrabold tracking-tight text-slate-950">Rota<span class="text-blue-600">U</span></span>
+        <span class="ml-2 hidden rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white sm:inline">Admin</span>
+      </div>
+      <div class="flex items-center gap-3">
+        @if (data()) {
+          <button class="btn-secondary whitespace-nowrap !px-4 !py-2.5 text-sm" (click)="load()" [disabled]="loading()">{{ loading() ? "Atualizando..." : "Atualizar" }}</button>
+        }
+        <a class="btn-secondary whitespace-nowrap !px-4 !py-2.5 text-sm" routerLink="/">Ver site</a>
+        @if (data()) {
+          <button class="text-sm font-semibold text-slate-500 hover:text-slate-800" (click)="logout()">Sair</button>
+        }
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-7xl px-5 py-10 lg:px-8">
+    <span class="section-tag">Banco de dados</span>
+    <h1 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Painel de administração</h1>
+    <p class="mt-2 text-slate-600">Tudo o que está salvo no banco do RotaU, somente para consulta.</p>
+
+    @if (needsLogin()) {
+      <form class="mt-6 flex max-w-md gap-3" (submit)="submitLogin($event)">
+        <input class="form-control !pl-4" type="password" required autocomplete="current-password" placeholder="Senha de administrador" [value]="password()" (input)="password.set(input($event))" />
+        <button class="btn-primary" type="submit">Entrar</button>
+      </form>
+    }
+
+    @if (error()) {
+      <p class="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">{{ error() }}</p>
+    }
+
+    @if (data()) {
+      <div class="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-6">
+        @for (item of tables; track item.key) {
+          <button
+            class="rounded-2xl border p-4 text-left transition"
+            [class]="active() === item.key ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-900/10' : 'border-slate-200 bg-white hover:border-blue-200'"
+            (click)="active.set(item.key)"
+          >
+            <span class="block text-sm font-semibold" [class]="active() === item.key ? 'text-blue-50' : 'text-slate-500'">{{ item.label }}</span>
+            <strong class="mt-1 block text-2xl font-extrabold">{{ count(item.key) }}</strong>
+          </button>
+        }
+      </div>
+
+      <section class="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-blue-900/5">
+        <div class="flex flex-col gap-3 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <h2 class="text-lg font-extrabold text-slate-950">{{ table().label }}</h2>
+          <input class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-400 sm:w-72" placeholder="Filtrar..." [value]="filter()" (input)="filter.set(input($event))" />
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-bold uppercase tracking-wider text-slate-500">
+              <tr>
+                @for (column of table().columns; track column[0]) {
+                  <th class="whitespace-nowrap px-4 py-3">{{ column[1] }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @for (row of rows(); track rowKey(row, $index)) {
+                <tr class="hover:bg-slate-50">
+                  @for (column of table().columns; track column[0]) {
+                    <td class="whitespace-nowrap px-4 py-3 text-slate-700">
+                      @if (column[0] === "status") {
+                        <span class="rounded-full px-3 py-1 text-xs font-bold" [class]="statusStyles[formatCell('status', row['status'])] ?? ''">{{ formatCell(column[0], row[column[0]]) }}</span>
+                      } @else {
+                        {{ formatCell(column[0], row[column[0]]) }}
+                      }
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+          @if (rows().length === 0) {
+            <p class="px-6 py-10 text-center text-sm text-slate-500">Nenhum registro{{ term() ? " para esse filtro" : "" }}.</p>
+          }
+        </div>
+      </section>
+    }
+  </main>
+</div>
