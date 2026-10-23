@@ -1,9 +1,7 @@
-// API REST do RotaU. Rode com `pnpm api` (porta 3001 por padrão).
+// API REST do RotaU (rotas /api/*). Roda dentro do servidor do Angular (src/server.ts),
+// tanto no `pnpm dev` quanto na Vercel.
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { ApiError, openDatabase, type Repository } from "./db.ts";
 import {
   clearSessionCookie,
@@ -23,19 +21,27 @@ import {
 export type AppOptions = { adminPassword?: string };
 
 // ADMIN_TOKEN é o nome antigo da variável e continua aceito.
-// O banco abre de forma assíncrona; as rotas esperam ele ficar pronto.
+// O banco abre de forma assíncrona e só na primeira chamada à API (o build do Angular
+// carrega este arquivo e não deve tocar no banco); as rotas esperam ele ficar pronto.
 export function createApp(
-  database: Repository | Promise<Repository> = openDatabase(),
+  database: Repository | Promise<Repository> | (() => Promise<Repository>) = openDatabase,
   { adminPassword = process.env.ADMIN_PASSWORD ?? process.env.ADMIN_TOKEN }: AppOptions = {},
 ) {
-  const ready = Promise.resolve(database);
-  ready.catch(() => {}); // o erro é tratado na primeira chamada à API
+  let opening: Promise<Repository> | undefined;
+  const ready = () => {
+    // se falhar, tenta abrir de novo na próxima chamada
+    opening ??= Promise.resolve(typeof database === "function" ? database() : database).catch((error) => {
+      opening = undefined;
+      throw error;
+    });
+    return opening;
+  };
   let repo: Repository;
   const app = express();
   // Atrás de um proxy HTTPS (ex.: hospedagem), defina TRUST_PROXY para o Express ver o IP e o protocolo reais
   if (process.env.TRUST_PROXY) app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
   app.disable("x-powered-by");
-  app.use(express.json());
+  app.use("/api", express.json());
 
   // Requisições que alteram dados precisam vir em JSON: formulários de outros
   // sites não conseguem enviar esse tipo, o que bloqueia ataques CSRF.
@@ -48,7 +54,7 @@ export function createApp(
   });
 
   app.use("/api", (_req, _res, next) => {
-    ready.then((opened) => {
+    ready().then((opened) => {
       repo = opened;
       next();
     }, next);
@@ -79,6 +85,11 @@ export function createApp(
     return parsed;
   };
   const body = (req: Request) => (req.body ?? {}) as Record<string, never>;
+  const currentUser = (res: Response): SessionUser => {
+    const user = res.locals.user as SessionUser | undefined;
+    if (!user || user.profile === "admin") throw new ApiError(401, "Faça login para continuar.");
+    return user;
+  };
 
   // Exige login com um dos perfis; com `ownId`, só o próprio usuário pode acessar
   const requireUser = (res: Response, profile: Profile, ownId?: number): SessionUser => {
@@ -140,6 +151,20 @@ export function createApp(
     requireUser(res, "driver", driverId);
     return repo.driverDashboard(driverId);
   }));
+  // Motorista inicia a ida ou a volta do dia (avisa quem vai hoje)
+  app.post("/api/drivers/:id/route-runs", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.startRoute(driverId, body(req).leg);
+  }));
+
+  // Presença do dia: o estudante logado vê e diz se vai hoje
+  app.get("/api/attendance/today", route((_req, res) => repo.studentToday(requireUser(res, "student").id)));
+  app.put("/api/attendance/today", route((req, res) => repo.setAttendance(requireUser(res, "student").id, body(req).going)));
+
+  // Avisos do sino do painel (estudante ou motorista logado)
+  app.get("/api/notifications", route((_req, res) => repo.notifications(currentUser(res))));
+  app.post("/api/notifications/read", route((_req, res) => repo.markNotificationsRead(currentUser(res)), 200));
 
   // Login, logout e "quem sou eu"
   app.post("/api/auth/login", route(async (req, res) => {
@@ -218,15 +243,6 @@ export function createApp(
     res.status(404).json({ error: "Rota não encontrada." });
   });
 
-  // Em produção, a mesma API serve o front end já compilado (pnpm build)
-  const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
-  if (existsSync(dist)) {
-    app.use(express.static(dist));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.join(dist, "index.html"));
-    });
-  }
-
   const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof ApiError) {
       res.status(error.status).json({ error: error.message });
@@ -237,12 +253,7 @@ export function createApp(
       res.status(500).json({ error: "Erro interno do servidor." });
     }
   };
-  app.use(handleError);
+  app.use("/api", handleError);
 
   return app;
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const port = Number(process.env.API_PORT ?? 3001);
-  createApp().listen(port, () => console.log(`API do RotaU rodando em http://localhost:${port}`));
 }

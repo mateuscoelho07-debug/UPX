@@ -1,5 +1,6 @@
--- Esquema do banco de dados do RotaU (SQLite)
-
+// Esquema do banco de dados do RotaU (SQLite / Turso).
+// Fica num arquivo .ts (e não .sql) para ir junto no pacote do servidor do Angular.
+export const schema = `
 PRAGMA foreign_keys = ON;
 
 -- Faculdades atendidas pela plataforma
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS drivers (
   van_model      TEXT NOT NULL,
   plate          TEXT NOT NULL UNIQUE COLLATE NOCASE,
   capacity       INTEGER NOT NULL DEFAULT 12 CHECK (capacity > 0),
-  departure_time TEXT NOT NULL DEFAULT '17:30',
+  departure_time TEXT NOT NULL DEFAULT '17:30',  -- saída da ida (busca os estudantes)
+  return_time    TEXT,                           -- saída da volta (nulo = a combinar)
   rating         REAL NOT NULL DEFAULT 5.0 CHECK (rating BETWEEN 0 AND 5),
   password_hash  TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
@@ -80,6 +82,39 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Presença do dia: o estudante avisa se vai ou não vai (data no horário de Brasília)
+CREATE TABLE IF NOT EXISTS attendance (
+  student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  driver_id  INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  day        TEXT NOT NULL,  -- AAAA-MM-DD
+  going      INTEGER NOT NULL CHECK (going IN (0, 1)),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (student_id, day)
+);
+
+-- Quando o motorista iniciou a ida ou a volta de um dia
+CREATE TABLE IF NOT EXISTS route_runs (
+  driver_id  INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  day        TEXT NOT NULL,
+  leg        TEXT NOT NULL CHECK (leg IN ('ida', 'volta')),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (driver_id, day, leg)
+);
+
+-- Avisos mostrados no sino do painel (estudantes e motoristas)
+CREATE TABLE IF NOT EXISTS notifications (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile    TEXT NOT NULL CHECK (profile IN ('student', 'driver')),
+  user_id    INTEGER NOT NULL,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  read_at    TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_driver_day ON attendance(driver_id, day);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(profile, user_id, id);
 CREATE INDEX IF NOT EXISTS idx_driver_colleges_college ON driver_colleges(college_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_driver ON bookings(driver_id);
 CREATE INDEX IF NOT EXISTS idx_students_college ON students(college_id);
+`;
