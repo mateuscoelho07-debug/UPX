@@ -4,7 +4,7 @@ O RotaU conecta estudantes a motoristas de vans universitárias. O site fica em 
 
 ## Como rodar
 
-Requer Node.js 22.18 ou mais novo (o banco usa o SQLite embutido no Node e a API é escrita em TypeScript, executado direto pelo Node) e pnpm.
+Requer Node.js 22.18 ou mais novo (a API é escrita em TypeScript, executado direto pelo Node; o banco é SQLite via libSQL) e pnpm.
 
 ```bash
 cd "Site para RotaU"
@@ -15,13 +15,17 @@ pnpm dev        # sobe a API (porta 3001) e o site (porta 8443) juntos
 Outros comandos:
 
 - `pnpm api`: só a API.
-- `pnpm start`: compila o site e serve site + API juntos na porta 3001 (modo produção).
+- `pnpm start`: compila o site e serve site + API juntos na porta 3001.
 - `pnpm test:api`: testes da API.
 - `pnpm typecheck`: verificação de tipos do site e da API.
 
-O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `API_PORT` (porta da API), `SEED=false` (não criar dados de exemplo) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
+O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar dados de exemplo) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
 
 As contas de exemplo usam a senha `rotau1234` (por exemplo, motorista `carlos@rotau.com` ou estudante `mariana@email.com`). Contas criadas antes do login com senha não têm senha e não conseguem entrar: cadastre de novo ou apague o banco.
+
+## Publicar na internet
+
+O passo a passo para colocar o site no ar (gratuito, com Vercel e Turso, incluindo domínio próprio) está em [`PUBLICAR.md`](PUBLICAR.md).
 
 ## Banco de dados
 
