@@ -5,6 +5,7 @@ import { provideRouter } from "@angular/router";
 import { ApiRequestError, ApiService } from "./api.service";
 import { StudentDashboard } from "./dashboard/student-dashboard";
 import VanDetailPage from "./dashboard/van-detail-page";
+import { DeleteAccount } from "./dashboard/delete-account";
 
 const day = {
   day: "2026-10-23",
@@ -128,5 +129,34 @@ describe("VanDetailPage", () => {
     await settle(fixture);
     expect(el.textContent).toContain("Presença confirmada: você vai hoje.");
     fixture.destroy();
+  });
+});
+
+describe("DeleteAccount", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
+
+  it("pede a senha e avisa quando a conta foi excluída", async () => {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(DeleteAccount);
+    let deleted = 0;
+    fixture.componentInstance.deleted.subscribe(() => deleted++);
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    (el.querySelector("button") as HTMLButtonElement).click();
+    await settle(fixture);
+    const input = el.querySelector("input") as HTMLInputElement;
+    input.value = "minha-senha";
+    input.dispatchEvent(new Event("input"));
+    (el.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit"));
+    const req = http.expectOne("/api/account/delete");
+    expect(req.request.body).toEqual({ password: "minha-senha" });
+    req.flush({ error: "Senha incorreta." }, { status: 401, statusText: "Unauthorized" });
+    await settle(fixture);
+    expect(el.textContent).toContain("Senha incorreta.");
+    expect(deleted).toBe(0);
+    (el.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit"));
+    http.expectOne("/api/account/delete").flush({ ok: true });
+    await settle(fixture);
+    expect(deleted).toBe(1);
   });
 });

@@ -174,6 +174,7 @@ export class ApiService {
   me = () => this.request<Session>("GET", "/auth/me");
   login = (profile: "student" | "driver", email: string, password: string) =>
     this.request<Session>("POST", "/auth/login", { profile, email, password });
+  deleteAccount = (password: string) => this.request<{ ok: true }>("POST", "/account/delete", { password });
   logout = () => this.request<{ ok: true }>("POST", "/auth/logout");
   createStudent = (data: StudentSignup) => this.request<Student>("POST", "/students", data);
   student = (id: number) => this.request<Student>("GET", `/students/${id}`);
