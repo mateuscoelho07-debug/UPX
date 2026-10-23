@@ -22,11 +22,15 @@ import {
 
 export type AppOptions = { adminPassword?: string };
 
-// ADMIN_TOKEN é o nome antigo da variável e continua aceito
+// ADMIN_TOKEN é o nome antigo da variável e continua aceito.
+// O banco abre de forma assíncrona; as rotas esperam ele ficar pronto.
 export function createApp(
-  repo: Repository = openDatabase(),
+  database: Repository | Promise<Repository> = openDatabase(),
   { adminPassword = process.env.ADMIN_PASSWORD ?? process.env.ADMIN_TOKEN }: AppOptions = {},
 ) {
+  const ready = Promise.resolve(database);
+  ready.catch(() => {}); // o erro é tratado na primeira chamada à API
+  let repo: Repository;
   const app = express();
   // Atrás de um proxy HTTPS (ex.: hospedagem), defina TRUST_PROXY para o Express ver o IP e o protocolo reais
   if (process.env.TRUST_PROXY) app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
@@ -41,6 +45,13 @@ export function createApp(
       return;
     }
     next();
+  });
+
+  app.use("/api", (_req, _res, next) => {
+    ready.then((opened) => {
+      repo = opened;
+      next();
+    }, next);
   });
 
   // Identifica o usuário logado pelo cookie de sessão

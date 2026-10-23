@@ -1,13 +1,15 @@
 // Camada de acesso ao banco de dados do RotaU.
-// Usa o SQLite embutido no Node (node:sqlite), sem dependências nativas.
-import { DatabaseSync, type StatementSync, type SQLInputValue } from "node:sqlite";
+// Usa o libSQL (compatível com SQLite): um arquivo local em desenvolvimento
+// e o Turso (banco gratuito na nuvem) quando o site está publicado.
+import { createClient, type Client, type InValue, type Transaction } from "@libsql/client";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ApiError } from "./errors.ts";
 import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const schema = readFileSync(path.join(here, "schema.sql"), "utf8");
 
 export { ApiError };
 
@@ -93,28 +95,41 @@ type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats"> & { cities: s
 
 export type Repository = ReturnType<typeof createRepository>;
 
-export function openDatabase(file = process.env.DB_PATH ?? path.join(here, "data", "rotau.db")): Repository {
-  if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
-  const db = new DatabaseSync(file);
-  db.exec(readFileSync(path.join(here, "schema.sql"), "utf8"));
-  migrate(db);
+// Sem DATABASE_URL, usa um arquivo SQLite local (server/data/rotau.db ou DB_PATH).
+// Em produção, DATABASE_URL aponta para o banco no Turso (libsql://...) e
+// DATABASE_AUTH_TOKEN traz o token de acesso.
+export async function openDatabase(
+  url = process.env.DATABASE_URL ?? localUrl(process.env.DB_PATH ?? path.join(here, "data", "rotau.db")),
+  authToken = process.env.DATABASE_AUTH_TOKEN,
+): Promise<Repository> {
+  if (process.env.VERCEL && !process.env.DATABASE_URL) {
+    throw new Error("Defina a variável DATABASE_URL (e DATABASE_AUTH_TOKEN) com os dados do banco no Turso.");
+  }
+  const db = createClient({ url, authToken });
+  await db.executeMultiple(schema);
+  await migrate(db);
   const repo = createRepository(db);
-  if (process.env.SEED !== "false") repo.seedIfEmpty();
+  if (process.env.SEED !== "false") await repo.seedIfEmpty();
   return repo;
 }
 
 // Bancos criados antes do login não têm a coluna de senha
-function migrate(db: DatabaseSync) {
+async function migrate(db: Client) {
   for (const table of ["students", "drivers"]) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-    if (!columns.some((column) => column.name === "password_hash")) {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN password_hash TEXT`);
+    const { rows } = await db.execute(`PRAGMA table_info(${table})`);
+    if (!rows.some((row) => row.name === "password_hash")) {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN password_hash TEXT`);
     }
   }
 }
 
 // Senha das contas de exemplo criadas pelo seed (ver README)
 export const DEMO_PASSWORD = "rotau1234";
+
+function localUrl(file: string): string {
+  mkdirSync(path.dirname(file), { recursive: true });
+  return pathToFileURL(file).href;
+}
 
 // Lê um campo de texto obrigatório do corpo da requisição
 function text(data: Record<string, unknown>, field: string): string {
@@ -132,45 +147,55 @@ function splitList(value: unknown): string[] {
 
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-function createRepository(db: DatabaseSync) {
-  function get<T>(sql: string, ...params: SQLInputValue[]): T | undefined {
-    return db.prepare(sql).get(...params) as T | undefined;
+// Conexão normal ou uma transação aberta: as duas executam SQL do mesmo jeito
+type Executor = Pick<Client, "execute">;
+
+function createRepository(db: Client) {
+  // Converte as linhas do libSQL em objetos simples (sem as chaves numéricas)
+  async function all<T>(sql: string, args: InValue[] = [], q: Executor = db): Promise<T[]> {
+    const { columns, rows } = await q.execute({ sql, args });
+    return rows.map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]])) as T);
   }
 
-  function all<T>(sql: string, ...params: SQLInputValue[]): T[] {
-    return db.prepare(sql).all(...params) as T[];
+  async function get<T>(sql: string, args: InValue[] = [], q: Executor = db): Promise<T | undefined> {
+    return (await all<T>(sql, args, q))[0];
   }
 
-  function transaction<T>(fn: () => T): T {
-    db.exec("BEGIN");
+  async function run(sql: string, args: InValue[] = [], q: Executor = db): Promise<number> {
+    return Number((await q.execute({ sql, args })).lastInsertRowid ?? 0);
+  }
+
+  async function transaction<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+    const tx = await db.transaction("write");
     try {
-      const result = fn();
-      db.exec("COMMIT");
+      const result = await fn(tx);
+      await tx.commit();
       return result;
     } catch (error) {
-      db.exec("ROLLBACK");
+      await tx.rollback();
       throw error;
+    } finally {
+      tx.close();
     }
   }
 
-  function findCollege(nameOrId: string | number): College {
+  async function findCollege(nameOrId: string | number, q: Executor = db): Promise<College> {
     const college = typeof nameOrId === "number"
-      ? get<College>("SELECT id, name FROM colleges WHERE id = ?", nameOrId)
-      : get<College>("SELECT id, name FROM colleges WHERE name = ?", nameOrId.trim());
+      ? await get<College>("SELECT id, name FROM colleges WHERE id = ?", [nameOrId], q)
+      : await get<College>("SELECT id, name FROM colleges WHERE name = ?", [nameOrId.trim()], q);
     if (!college) throw new ApiError(400, `Faculdade "${nameOrId}" não encontrada.`);
     return college;
   }
 
-  function findOrCreateCollege(name: string): College {
-    const existing = get<College>("SELECT id, name FROM colleges WHERE name = ?", name);
+  async function findOrCreateCollege(name: string, q: Executor = db): Promise<College> {
+    const existing = await get<College>("SELECT id, name FROM colleges WHERE name = ?", [name], q);
     if (existing) return existing;
-    const { lastInsertRowid } = db.prepare("INSERT INTO colleges (name) VALUES (?)").run(name);
-    return { id: Number(lastInsertRowid), name };
+    return { id: await run("INSERT INTO colleges (name) VALUES (?)", [name], q), name };
   }
 
-  function insertOrConflict(statement: StatementSync, params: SQLInputValue[], conflictMessage: string): number {
+  async function insertOrConflict(sql: string, args: InValue[], conflictMessage: string, q: Executor = db): Promise<number> {
     try {
-      return Number(statement.run(...params).lastInsertRowid);
+      return await run(sql, args, q);
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE")) throw new ApiError(409, conflictMessage);
       throw error;
@@ -194,51 +219,52 @@ function createRepository(db: DatabaseSync) {
     };
   }
 
-  function getDriver(id: number): Driver {
-    const row = get<DriverRow>(`${driverSummarySql} WHERE d.id = ?`, id);
+  async function getDriver(id: number, q: Executor = db): Promise<Driver> {
+    const row = await get<DriverRow>(`${driverSummarySql} WHERE d.id = ?`, [id], q);
     if (!row) throw new ApiError(404, "Motorista não encontrado.");
     return toDriver(row);
   }
 
-  function getStudent(id: number): Student {
-    const student = get<Student>(`
+  async function getStudent(id: number, q: Executor = db): Promise<Student> {
+    const student = await get<Student>(`
       SELECT s.id, s.name, s.phone, s.email, s.address, c.id AS collegeId, c.name AS college
-      FROM students s JOIN colleges c ON c.id = s.college_id WHERE s.id = ?`, id);
+      FROM students s JOIN colleges c ON c.id = s.college_id WHERE s.id = ?`, [id], q);
     if (!student) throw new ApiError(404, "Estudante não encontrado.");
     return student;
   }
 
-  function driversForCollege(collegeId: number): Driver[] {
-    return all<DriverRow>(`${driverSummarySql}
+  async function driversForCollege(collegeId: number): Promise<Driver[]> {
+    const rows = await all<DriverRow>(`${driverSummarySql}
       WHERE d.id IN (SELECT driver_id FROM driver_colleges WHERE college_id = ?)
-      ORDER BY d.rating DESC, d.departure_time`, collegeId).map(toDriver);
+      ORDER BY d.rating DESC, d.departure_time`, [collegeId]);
+    return rows.map(toDriver);
   }
 
-  function getBooking(id: number): Booking {
-    const booking = get<Booking>("SELECT id, status, pickup, pickup_time AS pickupTime FROM bookings WHERE id = ?", id);
+  async function getBooking(id: number): Promise<Booking> {
+    const booking = await get<Booking>("SELECT id, status, pickup, pickup_time AS pickupTime FROM bookings WHERE id = ?", [id]);
     if (!booking) throw new ApiError(404, "Reserva não encontrada.");
     return booking;
   }
 
   const repo = {
-    listColleges(): College[] {
+    listColleges(): Promise<College[]> {
       return all<College>("SELECT id, name FROM colleges ORDER BY name");
     },
 
-    createStudent(data: StudentInput): Student {
+    async createStudent(data: StudentInput): Promise<Student> {
       const input = data as Record<string, unknown>;
-      const college = findCollege(typeof data.college === "number" ? data.college : text(input, "college"));
-      const id = insertOrConflict(
-        db.prepare("INSERT INTO students (name, phone, email, address, college_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)"),
+      const college = await findCollege(typeof data.college === "number" ? data.college : text(input, "college"));
+      const id = await insertOrConflict(
+        "INSERT INTO students (name, phone, email, address, college_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
         [text(input, "name"), text(input, "phone"), text(input, "email"), text(input, "address"), college.id, data.passwordHash ?? null],
         "Já existe um estudante com este e-mail.",
       );
       return getStudent(id);
     },
 
-    getStudent,
+    getStudent: (id: number) => getStudent(id),
 
-    createDriver(data: DriverInput): Driver {
+    async createDriver(data: DriverInput): Promise<Driver> {
       const input = data as Record<string, unknown>;
       const fields = {
         name: text(input, "name"),
@@ -258,51 +284,54 @@ function createRepository(db: DatabaseSync) {
       const rating = data.rating === undefined ? 5 : Number(data.rating);
       if (!(rating >= 0 && rating <= 5)) throw new ApiError(400, "Nota inválida (use de 0 a 5).");
 
-      const id = transaction(() => {
-        const driverId = insertOrConflict(
-          db.prepare(`INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, rating, password_hash)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      const id = await transaction(async (tx) => {
+        const driverId = await insertOrConflict(
+          `INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, rating, password_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [fields.name, fields.phone, fields.email, fields.vanModel, fields.plate, capacity, departureTime, rating, data.passwordHash ?? null],
           "Já existe um motorista com este e-mail ou placa.",
+          tx,
         );
-        const addCity = db.prepare("INSERT INTO driver_cities (driver_id, position, city) VALUES (?, ?, ?)");
-        cities.forEach((city, index) => addCity.run(driverId, index, city));
-        const addCollege = db.prepare("INSERT OR IGNORE INTO driver_colleges (driver_id, college_id) VALUES (?, ?)");
-        for (const name of colleges) addCollege.run(driverId, findOrCreateCollege(name).id);
+        for (const [index, city] of cities.entries()) {
+          await run("INSERT INTO driver_cities (driver_id, position, city) VALUES (?, ?, ?)", [driverId, index, city], tx);
+        }
+        for (const name of colleges) {
+          const college = await findOrCreateCollege(name, tx);
+          await run("INSERT OR IGNORE INTO driver_colleges (driver_id, college_id) VALUES (?, ?)", [driverId, college.id], tx);
+        }
         return driverId;
       });
       return getDriver(id);
     },
 
-    getDriver,
+    getDriver: (id: number) => getDriver(id),
 
     // Busca da página inicial: quantas vans atendem a faculdade escolhida
-    searchRoutes(data: { address?: string; college?: string }): { college: string; count: number } {
+    async searchRoutes(data: { address?: string; college?: string }): Promise<{ college: string; count: number }> {
       const input = data as Record<string, unknown>;
       const address = text(input, "address");
-      const found = findCollege(text(input, "college"));
-      const drivers = driversForCollege(found.id);
-      db.prepare("INSERT INTO searches (address, college_id, results) VALUES (?, ?, ?)").run(address, found.id, drivers.length);
+      const found = await findCollege(text(input, "college"));
+      const drivers = await driversForCollege(found.id);
+      await run("INSERT INTO searches (address, college_id, results) VALUES (?, ?, ?)", [address, found.id, drivers.length]);
       return { college: found.name, count: drivers.length };
     },
 
     // Vans disponíveis para um estudante (ou para uma faculdade)
-    listVans({ studentId, college }: { studentId?: number; college?: string }): Van[] {
+    async listVans({ studentId, college }: { studentId?: number; college?: string }): Promise<Van[]> {
       let target: College | undefined;
       let bookedDriverIds = new Set<number>();
       if (studentId) {
-        const student = getStudent(studentId);
+        const student = await getStudent(studentId);
         target = { id: student.collegeId, name: student.college };
-        bookedDriverIds = new Set(
-          all<{ driver_id: number }>("SELECT driver_id FROM bookings WHERE student_id = ? AND status <> 'Cancelado'", studentId)
-            .map((row) => row.driver_id),
-        );
+        const booked = await all<{ driver_id: number }>(
+          "SELECT driver_id FROM bookings WHERE student_id = ? AND status <> 'Cancelado'", [studentId]);
+        bookedDriverIds = new Set(booked.map((row) => row.driver_id));
       } else if (college) {
-        target = findCollege(college);
+        target = await findCollege(college);
       }
       const drivers = target
-        ? driversForCollege(target.id)
-        : all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`).map(toDriver);
+        ? await driversForCollege(target.id)
+        : (await all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`)).map(toDriver);
       return drivers.map((driver) => ({
         id: driver.id,
         driver: driver.name,
@@ -317,128 +346,135 @@ function createRepository(db: DatabaseSync) {
     },
 
     // Painel do motorista: dados da rota e lista de embarque
-    driverDashboard(driverId: number): { driver: Driver; passengers: Passenger[]; mainDestination: string } {
-      const driver = getDriver(driverId);
-      const passengers = all<Passenger>(`
+    async driverDashboard(driverId: number): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string }> {
+      const driver = await getDriver(driverId);
+      const passengers = await all<Passenger>(`
         SELECT b.id AS bookingId, s.id AS studentId, s.name, b.pickup, b.pickup_time AS pickupTime, c.name AS college, b.status
         FROM bookings b
         JOIN students s ON s.id = b.student_id
         JOIN colleges c ON c.id = s.college_id
         WHERE b.driver_id = ? AND b.status <> 'Cancelado'
-        ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at`, driverId);
+        ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at`, [driverId]);
       const counts = new Map<string, number>();
       for (const passenger of passengers) counts.set(passenger.college, (counts.get(passenger.college) ?? 0) + 1);
       const mainDestination = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? driver.colleges[0] ?? "—";
       return { driver, passengers, mainDestination };
     },
 
-    createBooking(data: { studentId?: number | string; driverId?: number | string }): { id: number; status: BookingStatus } {
+    createBooking(data: { studentId?: number | string; driverId?: number | string }): Promise<{ id: number; status: BookingStatus }> {
       const input = data as Record<string, unknown>;
       const studentId = Number(text(input, "studentId"));
       const driverId = Number(text(input, "driverId"));
-      return transaction(() => {
-        const student = getStudent(studentId);
-        const driver = getDriver(driverId);
-        const existing = get<{ id: number; status: BookingStatus }>(
-          "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?", student.id, driver.id);
+      return transaction(async (tx) => {
+        const student = await getStudent(studentId, tx);
+        const driver = await getDriver(driverId, tx);
+        const existing = await get<{ id: number; status: BookingStatus }>(
+          "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?", [student.id, driver.id], tx);
         if (existing && existing.status !== "Cancelado") throw new ApiError(409, "Você já reservou uma vaga nesta van.");
         if (driver.freeSeats <= 0) throw new ApiError(409, "Esta van não tem vagas livres.");
         if (existing) {
-          db.prepare("UPDATE bookings SET status = 'Aguardando', pickup = ? WHERE id = ?").run(student.address, existing.id);
+          await run("UPDATE bookings SET status = 'Aguardando', pickup = ? WHERE id = ?", [student.address, existing.id], tx);
           return { id: existing.id, status: "Aguardando" as const };
         }
-        const { lastInsertRowid } = db.prepare("INSERT INTO bookings (student_id, driver_id, pickup) VALUES (?, ?, ?)")
-          .run(student.id, driver.id, student.address);
-        return { id: Number(lastInsertRowid), status: "Aguardando" as const };
+        const id = await run("INSERT INTO bookings (student_id, driver_id, pickup) VALUES (?, ?, ?)",
+          [student.id, driver.id, student.address], tx);
+        return { id, status: "Aguardando" as const };
       });
     },
 
-    updateBooking(id: number, { status, pickupTime }: { status?: string; pickupTime?: string | null }): Booking {
+    async updateBooking(id: number, { status, pickupTime }: { status?: string; pickupTime?: string | null }): Promise<Booking> {
       if (status !== undefined && !bookingStatuses.includes(status as BookingStatus)) {
         throw new ApiError(400, "Status inválido.");
       }
       if (pickupTime !== undefined && pickupTime !== null && !timePattern.test(pickupTime)) {
         throw new ApiError(400, "Horário de embarque inválido (use HH:MM).");
       }
-      getBooking(id);
-      if (status !== undefined) db.prepare("UPDATE bookings SET status = ? WHERE id = ?").run(status, id);
-      if (pickupTime !== undefined) db.prepare("UPDATE bookings SET pickup_time = ? WHERE id = ?").run(pickupTime, id);
+      await getBooking(id);
+      if (status !== undefined) await run("UPDATE bookings SET status = ? WHERE id = ?", [status, id]);
+      if (pickupTime !== undefined) await run("UPDATE bookings SET pickup_time = ? WHERE id = ?", [pickupTime, id]);
       return getBooking(id);
     },
 
     // Conta usada no login (o e-mail é único dentro de cada perfil)
-    async findAccount(profile: "student" | "driver", email: string): Promise<{ id: number; name: string; passwordHash: string | null } | undefined> {
+    findAccount(profile: "student" | "driver", email: string): Promise<{ id: number; name: string; passwordHash: string | null } | undefined> {
       const table = profile === "student" ? "students" : "drivers";
-      return get(`SELECT id, name, password_hash AS passwordHash FROM ${table} WHERE email = ?`, email.trim());
+      return get(`SELECT id, name, password_hash AS passwordHash FROM ${table} WHERE email = ?`, [email.trim()]);
     },
 
     async accountName(user: SessionUser): Promise<string> {
       if (user.profile === "admin") return "Administrador";
-      return user.profile === "student" ? getStudent(user.id).name : getDriver(user.id).name;
+      return (user.profile === "student" ? await getStudent(user.id) : await getDriver(user.id)).name;
     },
 
     async createSession(tokenHash: string, user: SessionUser, days: number): Promise<void> {
-      db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
-      db.prepare(`INSERT INTO sessions (token_hash, profile, user_id, expires_at)
-                  VALUES (?, ?, ?, datetime('now', ?))`).run(tokenHash, user.profile, user.id, `+${days} days`);
+      await run("DELETE FROM sessions WHERE expires_at <= datetime('now')");
+      await run(`INSERT INTO sessions (token_hash, profile, user_id, expires_at)
+                 VALUES (?, ?, ?, datetime('now', ?))`, [tokenHash, user.profile, user.id, `+${days} days`]);
     },
 
     // Sessão válida (não expirada e de uma conta que ainda existe)
-    async getSession(tokenHash: string): Promise<SessionUser | undefined> {
+    getSession(tokenHash: string): Promise<SessionUser | undefined> {
       return get<{ profile: Profile; id: number }>(`
         SELECT se.profile, se.user_id AS id FROM sessions se
         WHERE se.token_hash = ? AND se.expires_at > datetime('now')
           AND (se.profile = 'admin'
             OR (se.profile = 'student' AND EXISTS (SELECT 1 FROM students WHERE id = se.user_id))
-            OR (se.profile = 'driver' AND EXISTS (SELECT 1 FROM drivers WHERE id = se.user_id)))`, tokenHash);
+            OR (se.profile = 'driver' AND EXISTS (SELECT 1 FROM drivers WHERE id = se.user_id)))`, [tokenHash]);
     },
 
     async deleteSession(tokenHash: string): Promise<void> {
-      db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+      await run("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]);
     },
 
     // Motorista dono da van de uma reserva
     async bookingDriverId(id: number): Promise<number> {
-      const row = get<{ driverId: number }>("SELECT driver_id AS driverId FROM bookings WHERE id = ?", id);
+      const row = await get<{ driverId: number }>("SELECT driver_id AS driverId FROM bookings WHERE id = ?", [id]);
       if (!row) throw new ApiError(404, "Reserva não encontrada.");
       return row.driverId;
     },
 
     // Visão geral de todas as tabelas para a página de administração (/admin)
-    adminOverview() {
+    async adminOverview() {
+      const drivers = await all<DriverRow & { createdAt: string }>(
+        `${driverSummarySql.replace("d.rating,", "d.rating, d.created_at AS createdAt,")} ORDER BY d.id DESC`);
       return {
-        colleges: all<Record<string, unknown>>(`
+        colleges: await all<Record<string, unknown>>(`
           SELECT c.id, c.name,
                  (SELECT COUNT(*) FROM students s WHERE s.college_id = c.id) AS students,
                  (SELECT COUNT(*) FROM driver_colleges dc WHERE dc.college_id = c.id) AS drivers
           FROM colleges c ORDER BY c.name`),
-        students: all<Record<string, unknown>>(`
+        students: await all<Record<string, unknown>>(`
           SELECT s.id, s.name, s.email, s.phone, s.address, c.name AS college, s.created_at AS createdAt
           FROM students s JOIN colleges c ON c.id = s.college_id ORDER BY s.id DESC`),
-        drivers: all<DriverRow & { createdAt: string }>(`${driverSummarySql.replace("d.rating,", "d.rating, d.created_at AS createdAt,")} ORDER BY d.id DESC`)
-          .map((row) => {
-            const driver = toDriver(row);
-            return { ...driver, cities: driver.cities.join(", "), colleges: driver.colleges.join(", "), createdAt: row.createdAt };
-          }),
-        bookings: all<Record<string, unknown>>(`
+        drivers: drivers.map((row) => {
+          const driver = toDriver(row);
+          return { ...driver, cities: driver.cities.join(", "), colleges: driver.colleges.join(", "), createdAt: row.createdAt };
+        }),
+        bookings: await all<Record<string, unknown>>(`
           SELECT b.id, s.name AS student, d.name AS driver, b.pickup, b.pickup_time AS pickupTime, b.status, b.created_at AS createdAt
           FROM bookings b JOIN students s ON s.id = b.student_id JOIN drivers d ON d.id = b.driver_id ORDER BY b.id DESC`),
-        searches: all<Record<string, unknown>>(`
+        searches: await all<Record<string, unknown>>(`
           SELECT se.id, se.address, c.name AS college, se.results, se.created_at AS createdAt
           FROM searches se JOIN colleges c ON c.id = se.college_id ORDER BY se.id DESC LIMIT 500`),
       };
     },
 
-    seedIfEmpty(): void {
-      if (get<{ total: number }>("SELECT COUNT(*) AS total FROM colleges")!.total > 0) return;
-      const passwordHash = hashPasswordSync(DEMO_PASSWORD);
-      transaction(() => {
-        const addCollege = db.prepare("INSERT INTO colleges (name) VALUES (?)");
-        for (const name of ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"]) addCollege.run(name);
+    async seedIfEmpty(): Promise<void> {
+      // A checagem e a criação das faculdades ficam na mesma transação: se duas
+      // instâncias do servidor subirem juntas, só uma cria os dados de exemplo.
+      const seeded = await transaction(async (tx) => {
+        const { total } = (await get<{ total: number }>("SELECT COUNT(*) AS total FROM colleges", [], tx))!;
+        if (total > 0) return false;
+        for (const name of ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"]) {
+          await run("INSERT INTO colleges (name) VALUES (?)", [name], tx);
+        }
+        return true;
       });
-      const carlos = repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
-      repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
-      repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
+      if (!seeded) return;
+      const passwordHash = hashPasswordSync(DEMO_PASSWORD);
+      const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
+      await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
+      await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
       const passengers: [string, string, string, string, string, BookingStatus][] = [
         ["Mariana Costa", "mariana@email.com", "Jd. Europa", "UniFacens", "17:40", "Confirmado"],
         ["Lucas Ribeiro", "lucas@email.com", "Vila Hortência", "Fatec", "17:55", "Confirmado"],
@@ -446,9 +482,9 @@ function createRepository(db: DatabaseSync) {
         ["Pedro Martins", "pedro@email.com", "Jd. Faculdade", "Unip", "18:20", "Confirmado"],
       ];
       for (const [name, email, address, college, pickupTime, status] of passengers) {
-        const student = repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
-        const booking = repo.createBooking({ studentId: student.id, driverId: carlos.id });
-        repo.updateBooking(booking.id, { status, pickupTime });
+        const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
+        const booking = await repo.createBooking({ studentId: student.id, driverId: carlos.id });
+        await repo.updateBooking(booking.id, { status, pickupTime });
       }
     },
   };
