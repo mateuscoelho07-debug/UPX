@@ -11,9 +11,9 @@ Por que dois serviços? A Vercel apaga qualquer arquivo salvo no servidor entre 
 
 ## O que já está pronto no repositório
 
-- `Site para RotaU/vercel.json`: diz à Vercel como compilar o site e que as chamadas `/api/...` vão para a API.
-- `Site para RotaU/api/index.ts`: a API do RotaU como função da Vercel.
-- `Site para RotaU/server/db.ts`: usa o banco do Turso quando a variável `DATABASE_URL` existe, e um arquivo local no seu computador quando não existe. Para desenvolver no seu computador, nada muda: `pnpm dev` continua funcionando.
+- `site/vercel.json`: diz à Vercel como compilar o site e que as chamadas `/api/...` vão para a API.
+- `site/api/index.ts`: a API do RotaU como função da Vercel.
+- `site/server/db.ts`: usa o banco do Turso quando a variável `DATABASE_URL` existe, e um arquivo local no seu computador quando não existe. Para desenvolver no seu computador, nada muda: `pnpm dev` continua funcionando.
 
 Você não precisa mexer nesses arquivos.
 
@@ -34,7 +34,7 @@ Não precisa criar tabelas: o RotaU cria tudo sozinho na primeira visita.
 1. Entre em https://vercel.com e clique em **Sign Up**. Escolha o plano **Hobby** (gratuito) e entre com o **GitHub**.
 2. No painel, clique em **Add New → Project**.
 3. Em **Import Git Repository**, clique em **Adjust GitHub App Permissions** se o repositório **UPX** não aparecer, autorize a Vercel nele e depois clique em **Import** ao lado do UPX.
-4. Na tela de configuração, procure **Root Directory** e clique em **Edit**. Escolha a pasta **Site para RotaU** e confirme. **Este passo é essencial**, porque o site fica dentro dessa pasta.
+4. Na tela de configuração, procure **Root Directory** e clique em **Edit**. Escolha a pasta **site** e confirme. **Este passo é essencial**, porque o site fica dentro dessa pasta.
 5. Em **Framework Preset**, deve aparecer **Vite**. Não mude o resto.
 
 ## Passo 3: colocar as variáveis (ainda na mesma tela)
@@ -76,10 +76,10 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 
 - **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
 - **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
-- **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `Site para RotaU` (Passo 2).
+- **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `site` (Passo 2).
 - **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_PASSWORD` não foi criada (nesse caso o painel deveria aparecer desativado). Crie e faça **Redeploy**.
 - **Variáveis novas não têm efeito:** a Vercel só lê variáveis novas em publicações novas. Sempre faça **Redeploy** depois de mudar.
 
 ## Desenvolvimento no seu computador
 
-Nada muda: `pnpm dev` na pasta `Site para RotaU` usa um arquivo local (`server/data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.
+Nada muda: `pnpm dev` na pasta `site` usa um arquivo local (`server/data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.
