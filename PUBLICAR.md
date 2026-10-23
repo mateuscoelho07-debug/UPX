@@ -48,6 +48,7 @@ Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 | `ADMIN_PASSWORD` | uma senha forte inventada por você | Senha do painel `/admin`. Sem ela, o painel fica desativado. |
 | `TRUST_PROXY` | `1` | Faz o login funcionar direito atrás do HTTPS da Vercel (cookie seguro e limite de tentativas por visitante). |
 | `SEED` | `false` | **Importante:** sem isso o banco ganha motoristas e estudantes de exemplo com senha conhecida (`rotau1234`). As faculdades da lista do cadastro são criadas sempre, com ou sem esta variável. |
+| `DEMO_VANS` | *(não crie por enquanto)* | Só quando houver motoristas reais: `false` apaga as vans fictícias de demonstração (veja "Vans de demonstração" abaixo). |
 
 Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 
@@ -57,6 +58,17 @@ Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 2. O site do RotaU deve abrir. Abra também `https://SEU-ENDERECO/api/health`: deve aparecer `{"ok":true}`.
 3. Faça um cadastro de teste (estudante ou motorista, com senha) e depois saia e entre de novo com o mesmo e-mail e senha. No painel do Turso (aba **Data** do banco), as tabelas `students` e `drivers` devem mostrar o cadastro.
 4. O painel de administração fica em `https://SEU-ENDERECO/admin` e pede a senha configurada em `ADMIN_PASSWORD`.
+
+## Vans de demonstração (fictícias)
+
+Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de demonstração** que cobrem toda a região de Sorocaba (Centro e as quatro zonas de Sorocaba, Votorantim, Itu, Salto, Porto Feliz, Boituva, Tatuí, Iperó, Itapetininga, São Roque, Mairinque e outras cidades vizinhas) e atendem **todas as faculdades** da lista, inclusive as que forem cadastradas depois.
+
+- Elas aparecem com **"(demo)"** no nome do motorista. Os motoristas não existem.
+- São criadas mesmo com `SEED=false`, e só uma vez (publicar de novo não duplica).
+- **Ninguém consegue entrar nessas contas:** elas não têm senha, então o login sempre falha.
+- Um estudante pode reservar vaga numa van de demonstração, mas ninguém vai confirmar a reserva.
+
+**Como remover quando houver motoristas reais:** na Vercel, abra **Settings → Environment Variables**, crie a variável `DEMO_VANS` com o valor `false` e faça **Redeploy**. Na próxima visita ao site, as vans de demonstração (e as reservas feitas nelas) são apagadas. Os motoristas reais não são afetados. Enquanto `DEMO_VANS=false` existir, elas não voltam.
 
 ## Passo 5 (opcional): domínio próprio
 
