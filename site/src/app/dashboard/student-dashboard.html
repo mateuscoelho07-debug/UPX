@@ -12,35 +12,7 @@
 
       @if (today(); as day) {
         <section class="mt-8 grid items-start gap-5 lg:grid-cols-2">
-          <article class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
-            <h2 class="text-xl font-extrabold text-slate-950">Você vai hoje?</h2>
-            <p class="mt-1 text-sm text-slate-500">Confirme para o motorista montar a rota do dia.</p>
-            <div class="mt-5 grid grid-cols-2 gap-3">
-              <button class="rounded-xl border-2 px-4 py-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
-                [class]="day.going === true ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200' : 'border-blue-600 bg-white text-blue-700 hover:bg-blue-50'"
-                [attr.aria-pressed]="day.going === true" [disabled]="!day.van || saving()" (click)="setGoing(true)">Vou hoje</button>
-              <button class="rounded-xl border-2 px-4 py-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
-                [class]="day.going === false ? 'border-slate-700 bg-slate-700 text-white' : 'border-blue-600 bg-white text-blue-700 hover:bg-blue-50'"
-                [attr.aria-pressed]="day.going === false" [disabled]="!day.van || saving()" (click)="setGoing(false)">Não vou hoje</button>
-            </div>
-            <p class="mt-4 text-sm" role="status" [class]="day.going === true ? 'font-semibold text-emerald-700' : 'text-slate-600'">
-              @if (!day.van) {
-                Reserve uma vaga numa van abaixo para confirmar presença todo dia.
-              } @else if (day.going === true) {
-                <app-icon name="check" class="mr-1 size-4 align-[-3px]" />Presença confirmada: você vai hoje.
-              } @else if (day.going === false) {
-                Você avisou que não vai hoje. O motorista já sabe.
-              } @else {
-                Você ainda não respondeu hoje.
-              }
-            </p>
-            @if (day.van?.status === "Aguardando") {
-              <p class="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">Sua reserva ainda aguarda a confirmação do motorista.</p>
-            }
-            @if (presenceError()) {
-              <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ presenceError() }}</p>
-            }
-          </article>
+          <app-presence-card [going]="day.going" [hasVan]="!!day.van" [status]="day.van?.status ?? null" [saving]="saving()" [error]="presenceError()" (choose)="setGoing($event)" />
 
           <article class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
             <h2 class="text-xl font-extrabold text-slate-950">Horário de hoje</h2>
@@ -86,31 +58,44 @@
       <p class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 text-center text-slate-600">Ainda não há vans atendendo a {{ student()!.college }}. Volte em breve!</p>
     }
 
+    @if (currentVan(); as current) {
+      <p class="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+        Você está na van de <strong>{{ current.driver }}</strong>. Cada estudante fica em uma van só: para escolher outra, abra a van e toque em <strong>Trocar para esta van</strong>.
+      </p>
+    }
+    @if (bookError()) {
+      <p class="mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{{ bookError() }}</p>
+    }
+
     <section class="mt-6 grid gap-5 lg:grid-cols-3">
       @for (van of vans(); track van.id; let index = $index) {
-        <article class="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200">
+        <article class="relative flex flex-col rounded-3xl border bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200" [class]="van.booked ? 'border-emerald-300' : 'border-slate-200'">
           <div class="flex items-start justify-between gap-4">
             <span class="grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600"><app-icon name="van" class="size-5" /></span>
             @if (van.booked) {
               <span class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Sua van</span>
-            } @else if (index === 0) {
+            } @else if (index === 0 && !currentVan()) {
               <span class="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>
             }
           </div>
-          <h3 class="mt-5 text-lg font-extrabold text-slate-950">{{ van.driver }}</h3>
+          <h3 class="mt-5 text-lg font-extrabold text-slate-950">
+            <a class="after:absolute after:inset-0 after:rounded-3xl focus-visible:outline-2" [routerLink]="['/painel/van', van.id]" [attr.aria-label]="'Ver detalhes da van de ' + van.driver">{{ van.driver }}</a>
+          </h3>
           <p class="mt-1 text-sm text-slate-500">{{ van.vehicle }}</p>
           <div class="my-5 space-y-3 border-y border-slate-100 py-5">
             <p class="flex items-center gap-3 text-sm font-semibold text-slate-700"><app-icon name="route" class="size-5 text-blue-600" />{{ van.route }}</p>
-            <p class="flex items-center gap-3 text-sm text-slate-600"><app-icon name="clock" class="size-5 text-blue-600" />Saída às {{ van.time }}</p>
+            <p class="flex items-center gap-3 text-sm text-slate-600"><app-icon name="clock" class="size-5 text-blue-600" />Ida às {{ van.time }}{{ van.returnTime ? " · volta às " + van.returnTime : "" }}</p>
           </div>
           <div class="mb-5 flex items-center justify-between text-sm">
             <span class="font-bold" [class]="van.freeSeats > 0 ? 'text-emerald-700' : 'text-red-600'">{{ van.freeSeats === 0 ? "Lotada" : van.freeSeats + " " + (van.freeSeats === 1 ? "vaga" : "vagas") }}</span>
             <span class="font-semibold text-slate-600">★ {{ rating(van.rating) }}</span>
           </div>
           @if (van.booked) {
-            <p class="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-6 py-3.5 font-bold text-emerald-700"><app-icon name="check" class="size-5" /> Vaga reservada</p>
+            <p class="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-6 py-3.5 font-bold text-emerald-700"><app-icon name="check" class="size-5" /> Vaga reservada · ver detalhes</p>
+          } @else if (currentVan()) {
+            <p class="mt-auto flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-6 py-3.5 font-bold text-slate-700">Ver detalhes <app-icon name="arrow" class="size-5" /></p>
           } @else {
-            <button class="btn-primary mt-auto w-full justify-center disabled:opacity-50" [disabled]="van.freeSeats === 0" (click)="book(van)">Reservar vaga <app-icon name="arrow" class="size-5" /></button>
+            <button class="btn-primary relative z-10 mt-auto w-full justify-center disabled:opacity-50" [disabled]="van.freeSeats === 0" (click)="book(van)">Reservar vaga <app-icon name="arrow" class="size-5" /></button>
           }
         </article>
       }

@@ -1,14 +1,16 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, input, output, signal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, output, signal } from "@angular/core";
+import { RouterLink } from "@angular/router";
 import { ApiRequestError, ApiService, type Student, type StudentToday, type TodayLeg, type Van } from "../api.service";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
+import { PresenceCard } from "./presence-card";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
 
 // Painel do estudante: "Você vai hoje?", horários de ida e volta e as vans da faculdade
 @Component({
   selector: "app-student-dashboard",
-  imports: [DashboardHeader, Icon, StatusMessage],
+  imports: [DashboardHeader, Icon, PresenceCard, RouterLink, StatusMessage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./student-dashboard.html",
 })
@@ -24,6 +26,9 @@ export class StudentDashboard implements OnInit {
   readonly loading = signal(true);
   readonly saving = signal(false);
   readonly presenceError = signal<string | null>(null);
+  readonly bookError = signal<string | null>(null);
+  // Cada estudante fica em uma van só
+  readonly currentVan = computed(() => this.vans().find((van) => van.booked) ?? null);
   private readonly destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -77,11 +82,13 @@ export class StudentDashboard implements OnInit {
   }
 
   async book(van: Van) {
+    this.bookError.set(null);
     try {
       await this.api.book(van.id);
       this.load();
     } catch (err) {
-      this.handleError(err as Error);
+      if (err instanceof ApiRequestError && err.status === 401) this.logout.emit();
+      else this.bookError.set((err as Error).message);
     }
   }
 

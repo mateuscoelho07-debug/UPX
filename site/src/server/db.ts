@@ -50,10 +50,33 @@ export type Van = {
   vehicle: string;
   route: string;
   time: string;
+  returnTime: string | null;
   capacity: number;
   freeSeats: number;
   rating: number;
   booked: boolean;
+};
+
+// Página da van: tudo o que o estudante precisa para decidir e confirmar presença
+export type VanDetail = {
+  id: number;
+  driver: string;
+  vehicle: string;
+  plate: string;
+  phone: string | null; // só aparece para quem reservou a vaga
+  route: string;
+  cities: string[];
+  colleges: string[];
+  time: string;
+  returnTime: string | null;
+  capacity: number;
+  freeSeats: number;
+  rating: number;
+  booked: boolean;
+  bookingId: number | null;
+  bookingStatus: BookingStatus | null;
+  // van atual do estudante, quando é outra (escolher esta substitui a atual)
+  current: { driverId: number; driver: string; bookingId: number } | null;
 };
 
 export type Passenger = {
@@ -456,11 +479,60 @@ function createRepository(db: Client) {
         vehicle: `${driver.vanModel} • ${driver.capacity} lugares`,
         route: `${driver.cities[0] ?? "—"} → ${target?.name ?? driver.colleges[0] ?? "—"}`,
         time: driver.departureTime,
+        returnTime: driver.returnTime,
         capacity: driver.capacity,
         freeSeats: driver.freeSeats,
         rating: driver.rating,
         booked: bookedDriverIds.has(driver.id),
       }));
+    },
+
+    // Detalhes de uma van para o estudante logado (o telefone só aparece depois da reserva)
+    async vanDetail(driverId: number, studentId: number): Promise<VanDetail> {
+      const student = await getStudent(studentId);
+      const driver = await getDriver(driverId);
+      if (!driver.colleges.some((name) => name.toLowerCase() === student.college.toLowerCase())) {
+        throw new ApiError(404, "Esta van não atende a sua faculdade.");
+      }
+      const active = await all<{ id: number; driverId: number; status: BookingStatus; driver: string }>(`
+        SELECT b.id, b.driver_id AS driverId, b.status, d.name AS driver FROM bookings b JOIN drivers d ON d.id = b.driver_id
+        WHERE b.student_id = ? AND b.status <> 'Cancelado' ORDER BY b.id DESC`, [studentId]);
+      const mine = active.find((booking) => booking.driverId === driverId);
+      const other = active.find((booking) => booking.driverId !== driverId);
+      return {
+        id: driver.id,
+        driver: driver.name,
+        vehicle: `${driver.vanModel} • ${driver.capacity} lugares`,
+        plate: driver.plate,
+        phone: mine ? driver.phone : null,
+        route: `${driver.cities[0] ?? "—"} → ${student.college}`,
+        cities: driver.cities,
+        colleges: driver.colleges,
+        time: driver.departureTime,
+        returnTime: driver.returnTime,
+        capacity: driver.capacity,
+        freeSeats: driver.freeSeats,
+        rating: driver.rating,
+        booked: Boolean(mine),
+        bookingId: mine?.id ?? null,
+        bookingStatus: mine?.status ?? null,
+        current: !mine && other ? { driverId: other.driverId, driver: other.driver, bookingId: other.id } : null,
+      };
+    },
+
+    // Estudante desiste da própria vaga
+    async cancelBooking(studentId: number, bookingId: number): Promise<{ id: number; status: BookingStatus }> {
+      return transaction(async (tx) => {
+        const booking = await get<{ studentId: number; driverId: number; status: BookingStatus }>(
+          "SELECT student_id AS studentId, driver_id AS driverId, status FROM bookings WHERE id = ?", [bookingId], tx);
+        if (!booking) throw new ApiError(404, "Reserva não encontrada.");
+        if (booking.studentId !== studentId) throw new ApiError(403, "Você não tem permissão para acessar estes dados.");
+        if (booking.status === "Cancelado") throw new ApiError(409, "Esta reserva já foi cancelada.");
+        await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [bookingId], tx);
+        const student = await getStudent(studentId, tx);
+        await notify({ profile: "driver", id: booking.driverId }, "Vaga liberada", `${student.name} cancelou a reserva e saiu da sua van.`, tx);
+        return { id: bookingId, status: "Cancelado" as const };
+      });
     },
 
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
@@ -577,7 +649,8 @@ function createRepository(db: Client) {
       return { ok: true };
     },
 
-    createBooking(data: { studentId?: number | string; driverId?: number | string }): Promise<{ id: number; status: BookingStatus }> {
+    // Cada estudante fica em uma van só: com `replace`, a reserva atual é cancelada e a nova entra no lugar
+    createBooking(data: { studentId?: number | string; driverId?: number | string; replace?: unknown }): Promise<{ id: number; status: BookingStatus }> {
       const input = data as Record<string, unknown>;
       const studentId = Number(text(input, "studentId"));
       const driverId = Number(text(input, "driverId"));
@@ -588,6 +661,17 @@ function createRepository(db: Client) {
           "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?", [student.id, driver.id], tx);
         if (existing && existing.status !== "Cancelado") throw new ApiError(409, "Você já reservou uma vaga nesta van.");
         if (driver.freeSeats <= 0) throw new ApiError(409, "Esta van não tem vagas livres.");
+        const others = await all<{ id: number; driverId: number }>(
+          "SELECT id, driver_id AS driverId FROM bookings WHERE student_id = ? AND driver_id <> ? AND status <> 'Cancelado'", [student.id, driver.id], tx);
+        if (others.length > 0) {
+          if (data.replace !== true) {
+            throw new ApiError(409, "Você já escolheu uma van. Cancele a reserva atual ou troque de van para escolher esta.");
+          }
+          for (const other of others) {
+            await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [other.id], tx);
+            await notify({ profile: "driver", id: other.driverId }, "Vaga liberada", `${student.name} trocou de van e saiu da sua rota.`, tx);
+          }
+        }
         await notify({ profile: "driver", id: driver.id }, "Nova reserva", `${student.name} reservou uma vaga na sua van. Confirme ou recuse no painel.`, tx);
         if (existing) {
           await run("UPDATE bookings SET status = 'Aguardando', pickup = ? WHERE id = ?", [student.address, existing.id], tx);
@@ -607,6 +691,9 @@ function createRepository(db: Client) {
         throw new ApiError(400, "Horário de embarque inválido (use HH:MM).");
       }
       const before = await getBooking(id);
+      if (before.status === "Cancelado" && status !== undefined && status !== "Cancelado") {
+        throw new ApiError(409, "Esta reserva foi cancelada.");
+      }
       if (status !== undefined) await run("UPDATE bookings SET status = ? WHERE id = ?", [status, id]);
       if (status !== undefined && status !== before.status && status !== "Aguardando") {
         const row = (await get<{ studentId: number; driver: string }>(
