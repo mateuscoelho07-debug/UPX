@@ -4,6 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from "@angular/common
 import { provideRouter } from "@angular/router";
 import { ApiRequestError, ApiService } from "./api.service";
 import { StudentDashboard } from "./dashboard/student-dashboard";
+import VanDetailPage from "./dashboard/van-detail-page";
 
 const day = {
   day: "2026-10-23",
@@ -69,6 +70,63 @@ describe("StudentDashboard", () => {
     await settle(fixture);
     expect(el.textContent).toContain("Presença confirmada: você vai hoje.");
     http.match("/api/notifications").forEach((req) => req.flush({ unread: 0, items: [] }));
+    fixture.destroy();
+  });
+});
+
+describe("VanDetailPage", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+
+  const detail = {
+    id: 3, driver: "Carlos", vehicle: "Master • 12 lugares", plate: "ABC-1D23", phone: null, route: "Centro → Facens",
+    cities: ["Centro", "Zona Norte"], colleges: ["Facens"], time: "06:30", returnTime: "22:40", capacity: 12, freeSeats: 4,
+    rating: 4.9, booked: false, bookingId: null, bookingStatus: null, current: null,
+  };
+
+  function open(van: object) {
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(VanDetailPage);
+    fixture.componentRef.setInput("id", "3");
+    fixture.detectChanges();
+    return { http, fixture, van };
+  }
+
+  async function load(fixture: ComponentFixture<VanDetailPage>, http: HttpTestingController, van: object) {
+    await settle(fixture); // queueMicrotask do load()
+    http.expectOne("/api/vans/3").flush(van);
+    http.expectOne("/api/attendance/today").flush(day);
+    http.match("/api/notifications").forEach((req) => req.flush({ unread: 0, items: [] }));
+    await settle(fixture);
+  }
+
+  it("mostra as informações e troca de van quando já existe uma reservada", async () => {
+    const { http, fixture } = open(detail);
+    await load(fixture, http, { ...detail, current: { driverId: 9, driver: "Fernanda", bookingId: 5 } });
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).toContain("Centro, Zona Norte");
+    expect(el.textContent).toContain("volta às 22:40");
+    expect(el.textContent).toContain("Você já está na van de Fernanda");
+    expect(el.textContent).not.toContain("Você vai hoje?");
+    [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Trocar para esta van"))!.click();
+    const req = http.expectOne("/api/bookings");
+    expect(req.request.body).toEqual({ driverId: 3, replace: true });
+    req.flush({ id: 1, status: "Aguardando" });
+    await settle(fixture);
+    http.match("/api/vans/3").forEach((r) => r.flush({ ...detail, booked: true, bookingId: 1, bookingStatus: "Aguardando", phone: "(15) 90000-0000" }));
+    http.match("/api/attendance/today").forEach((r) => r.flush(day));
+    fixture.destroy();
+  });
+
+  it("na van reservada confirma Vou hoje", async () => {
+    const { http, fixture } = open(detail);
+    await load(fixture, http, { ...detail, booked: true, bookingId: 1, bookingStatus: "Confirmado", phone: "(15) 90000-0000" });
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).toContain("Você vai hoje?");
+    expect(el.textContent).toContain("(15) 90000-0000");
+    [...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Vou hoje")!.click();
+    http.expectOne("/api/attendance/today").flush({ ...day, going: true });
+    await settle(fixture);
+    expect(el.textContent).toContain("Presença confirmada: você vai hoje.");
     fixture.destroy();
   });
 });

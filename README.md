@@ -68,7 +68,9 @@ O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema
 | POST | `/api/auth/logout` | Sair |
 | GET | `/api/auth/me` | Usuário logado |
 | GET | `/api/vans` | Vans que atendem a faculdade do estudante logado (`?college=` é público) |
-| POST | `/api/bookings` | Estudante logado reserva uma vaga (`driverId`) |
+| GET | `/api/vans/:id` | Página da van (só vans da faculdade do estudante logado; o telefone só aparece após reservar) |
+| POST | `/api/bookings` | Estudante logado reserva uma vaga (`driverId`). Cada estudante fica em uma van só: com outra reserva ativa dá 409, a menos que envie `replace: true` (troca de van) |
+| POST | `/api/bookings/:id/cancel` | Estudante cancela a própria reserva |
 | PATCH | `/api/bookings/:id` | Motorista da van confirma ou recusa (`status`, `pickupTime`) |
 | POST | `/api/drivers/:id/route-runs` | Motorista inicia a `ida` ou a `volta` do dia (`leg`); avisa quem vai hoje |
 | GET | `/api/attendance/today` | Estudante: presença de hoje, van e horários de ida e volta |
