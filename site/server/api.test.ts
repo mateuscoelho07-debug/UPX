@@ -223,3 +223,19 @@ test("sem ADMIN_PASSWORD o painel fica desativado", async () => {
   assert.equal((await fetch(`${url}/overview`)).status, 503);
   app.close();
 });
+
+test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo", async () => {
+  process.env.SEED = "false";
+  let repo;
+  try {
+    repo = await openDatabase(":memory:");
+  } finally {
+    delete process.env.SEED;
+  }
+  await repo.ensureColleges(); // rodar de novo não duplica
+  const colleges = await repo.listColleges();
+  assert.deepEqual(colleges.map((c) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
+  const overview = await repo.adminOverview();
+  assert.equal(overview.students.length, 0);
+  assert.equal(overview.drivers.length, 0);
+});

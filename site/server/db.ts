@@ -109,7 +109,8 @@ export async function openDatabase(
   await db.executeMultiple(schema);
   await migrate(db);
   const repo = createRepository(db);
-  if (process.env.SEED !== "false") await repo.seedIfEmpty();
+  await repo.ensureColleges();
+  if (process.env.SEED !== "false") await repo.seedDemoData();
   return repo;
 }
 
@@ -144,6 +145,8 @@ function splitList(value: unknown): string[] {
   const items = Array.isArray(value) ? value : String(value ?? "").split(",");
   return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
 }
+
+const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
 
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -459,35 +462,43 @@ function createRepository(db: Client) {
       };
     },
 
-    async seedIfEmpty(): Promise<void> {
-      // A checagem e a criação das faculdades ficam na mesma transação: se duas
-      // instâncias do servidor subirem juntas, só uma cria os dados de exemplo.
-      const seeded = await transaction(async (tx) => {
-        const { total } = (await get<{ total: number }>("SELECT COUNT(*) AS total FROM colleges", [], tx))!;
-        if (total > 0) return false;
-        for (const name of ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"]) {
-          await run("INSERT INTO colleges (name) VALUES (?)", [name], tx);
-        }
-        return true;
-      });
-      if (!seeded) return;
-      const passwordHash = hashPasswordSync(DEMO_PASSWORD);
-      const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
-      await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
-      await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
-      const passengers: [string, string, string, string, string, BookingStatus][] = [
-        ["Mariana Costa", "mariana@email.com", "Jd. Europa", "UniFacens", "17:40", "Confirmado"],
-        ["Lucas Ribeiro", "lucas@email.com", "Vila Hortência", "Fatec", "17:55", "Confirmado"],
-        ["Ana Beatriz", "ana@email.com", "Centro", "Uniso", "18:10", "Aguardando"],
-        ["Pedro Martins", "pedro@email.com", "Jd. Faculdade", "Unip", "18:20", "Confirmado"],
-      ];
-      for (const [name, email, address, college, pickupTime, status] of passengers) {
-        const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
-        const booking = await repo.createBooking({ studentId: student.id, driverId: carlos.id });
-        await repo.updateBooking(booking.id, { status, pickupTime });
+    // Faculdades atendidas: dados de referência que o cadastro precisa, criados sempre
+    // (em qualquer banco, mesmo com SEED=false). Idempotente: ignora as que já existem.
+    async ensureColleges(): Promise<void> {
+      for (const name of defaultColleges) await run("INSERT OR IGNORE INTO colleges (name) VALUES (?)", [name]);
+    },
+
+    // Motoristas e passageiros de exemplo (com a senha pública DEMO_PASSWORD), só em banco vazio
+    async seedDemoData(): Promise<void> {
+      const { total } = (await get<{ total: number }>(
+        "SELECT (SELECT COUNT(*) FROM drivers) + (SELECT COUNT(*) FROM students) AS total"))!;
+      if (total > 0) return;
+      try {
+        await insertDemoData();
+      } catch (error) {
+        // duas instâncias subindo juntas: a outra já criou os exemplos
+        if (!(error instanceof ApiError && error.status === 409)) throw error;
       }
     },
   };
+
+  async function insertDemoData(): Promise<void> {
+    const passwordHash = hashPasswordSync(DEMO_PASSWORD);
+    const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
+    await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
+    await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
+    const passengers: [string, string, string, string, string, BookingStatus][] = [
+      ["Mariana Costa", "mariana@email.com", "Jd. Europa", "UniFacens", "17:40", "Confirmado"],
+      ["Lucas Ribeiro", "lucas@email.com", "Vila Hortência", "Fatec", "17:55", "Confirmado"],
+      ["Ana Beatriz", "ana@email.com", "Centro", "Uniso", "18:10", "Aguardando"],
+      ["Pedro Martins", "pedro@email.com", "Jd. Faculdade", "Unip", "18:20", "Confirmado"],
+    ];
+    for (const [name, email, address, college, pickupTime, status] of passengers) {
+      const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
+      const booking = await repo.createBooking({ studentId: student.id, driverId: carlos.id });
+      await repo.updateBooking(booking.id, { status, pickupTime });
+    }
+  }
 
   return repo;
 }
