@@ -4,22 +4,23 @@ O RotaU conecta estudantes a motoristas de vans universitárias. O site fica em 
 
 ## Como rodar
 
-Requer Node.js 22.18 ou mais novo (a API é escrita em TypeScript, executado direto pelo Node; o banco é SQLite via libSQL) e pnpm.
+O RotaU é um projeto **Angular 22** (telas com componentes standalone) com **Angular SSR**: o servidor do Angular (Express, em `src/server.ts`) também hospeda a API em TypeScript (`src/server/`). O banco é SQLite via libSQL (Turso em produção). Requer Node.js 24 e pnpm.
 
 ```bash
 cd site
 pnpm install
-pnpm dev        # sobe a API (porta 3001) e o site (porta 8443) juntos
+pnpm dev        # site + API juntos em http://localhost:8443 (ng serve)
 ```
 
 Outros comandos:
 
-- `pnpm api`: só a API.
-- `pnpm start`: compila o site e serve site + API juntos na porta 3001.
+- `pnpm build`: compila o site e o servidor (`dist/rotau`).
+- `pnpm start`: compila e roda o servidor de produção na porta 3001.
+- `pnpm test`: testes do front end Angular (Vitest).
 - `pnpm test:api`: testes da API.
 - `pnpm typecheck`: verificação de tipos do site e da API.
 
-O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar os motoristas e estudantes de exemplo; as faculdades são criadas sempre), `DEMO_VANS=false` (apagar e não criar as 11 vans fictícias de demonstração, sem senha, que cobrem a região de Sorocaba e todas as faculdades; elas são criadas por padrão, mesmo com `SEED=false`) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
+O banco é criado automaticamente em `data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `PORT` (porta do servidor de produção), `SEED=false` (não criar os motoristas e estudantes de exemplo; as faculdades são criadas sempre), `DEMO_VANS=false` (apagar e não criar as 11 vans fictícias de demonstração, sem senha, que cobrem a região de Sorocaba e todas as faculdades; elas são criadas por padrão, mesmo com `SEED=false`) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
 
 As contas de exemplo usam a senha `rotau1234` (por exemplo, motorista `carlos@rotau.com` ou estudante `mariana@email.com`). Contas criadas antes do login com senha não têm senha e não conseguem entrar: cadastre de novo ou apague o banco.
 
@@ -29,7 +30,7 @@ O passo a passo para colocar o site no ar (gratuito, com Vercel e Turso, incluin
 
 ## Banco de dados
 
-O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
+O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema.ts):
 
 | Tabela | O que guarda |
 | --- | --- |
@@ -41,6 +42,9 @@ O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
 | `bookings` | Reservas de vaga (estudante ↔ van), com status `Aguardando`, `Confirmado` ou `Cancelado` |
 | `searches` | Buscas feitas na página inicial, para medir a demanda |
 | `sessions` | Sessões de login abertas (só o hash do token, com data de expiração) |
+| `attendance` | Presença do dia: se o estudante vai ou não vai (uma resposta por estudante por dia, no horário de Brasília) |
+| `route_runs` | Quando o motorista iniciou a ida ou a volta de cada dia |
+| `notifications` | Avisos do sino do painel, para estudantes e motoristas |
 
 ## Login e segurança
 
@@ -66,6 +70,11 @@ O esquema completo está em [`server/schema.sql`](site/server/schema.sql):
 | GET | `/api/vans` | Vans que atendem a faculdade do estudante logado (`?college=` é público) |
 | POST | `/api/bookings` | Estudante logado reserva uma vaga (`driverId`) |
 | PATCH | `/api/bookings/:id` | Motorista da van confirma ou recusa (`status`, `pickupTime`) |
+| POST | `/api/drivers/:id/route-runs` | Motorista inicia a `ida` ou a `volta` do dia (`leg`); avisa quem vai hoje |
+| GET | `/api/attendance/today` | Estudante: presença de hoje, van e horários de ida e volta |
+| PUT | `/api/attendance/today` | Estudante diz se vai hoje (`going`: true ou false) |
+| GET | `/api/notifications` | Avisos do usuário logado (sino) |
+| POST | `/api/notifications/read` | Marca os avisos como lidos |
 | POST | `/api/admin/login` | Login do painel de administração (`password`) |
 
 ## Painel de administração

@@ -11,9 +11,11 @@ Por que dois serviços? A Vercel apaga qualquer arquivo salvo no servidor entre 
 
 ## O que já está pronto no repositório
 
-- `site/vercel.json`: diz à Vercel como compilar o site e que as chamadas `/api/...` vão para a API.
-- `site/api/index.ts`: a API do RotaU como função da Vercel.
-- `site/server/db.ts`: usa o banco do Turso quando a variável `DATABASE_URL` existe, e um arquivo local no seu computador quando não existe. Para desenvolver no seu computador, nada muda: `pnpm dev` continua funcionando.
+O RotaU inteiro é um projeto **Angular** (a pasta `site`). O site (telas) e a API (o "back end") ficam no mesmo projeto: o Angular tem um servidor próprio (Angular SSR) e é ele que responde as chamadas `/api/...`.
+
+- `site/vercel.json`: diz à Vercel onde fica o site compilado (`dist/rotau/browser`) e que tudo que não é arquivo vai para o servidor do Angular.
+- `site/api/index.js`: a ponte que liga a Vercel ao servidor do Angular (`site/src/server.ts`).
+- `site/src/server/`: a API do RotaU (rotas, login, banco). O arquivo `db.ts` usa o banco do Turso quando a variável `DATABASE_URL` existe, e um arquivo local no seu computador quando não existe. Para desenvolver no seu computador, nada muda: `pnpm dev` continua funcionando.
 
 Você não precisa mexer nesses arquivos.
 
@@ -35,7 +37,10 @@ Não precisa criar tabelas nem cadastrar faculdades: o RotaU cria as tabelas e a
 2. No painel, clique em **Add New → Project**.
 3. Em **Import Git Repository**, clique em **Adjust GitHub App Permissions** se o repositório **UPX** não aparecer, autorize a Vercel nele e depois clique em **Import** ao lado do UPX.
 4. Na tela de configuração, procure **Root Directory** e clique em **Edit**. Escolha a pasta **site** e confirme. **Este passo é essencial**, porque o site fica dentro dessa pasta.
-5. Em **Framework Preset**, deve aparecer **Vite**. Não mude o resto.
+5. Em **Framework Preset**, escolha **Other** (a Vercel pode mostrar "Angular" ou "Vite"; se aparecer outro, mude para **Other**). Não precisa mexer em Build Command nem em Output Directory: o arquivo `site/vercel.json` já preenche tudo (compila com `pnpm build` e publica a pasta `dist/rotau/browser`).
+6. Em **Node.js Version** (em **Settings → General**, depois da primeira publicação, se ainda não estiver), deixe **24.x**. O Angular novo não roda no Node 20.
+
+> **Mudou em relação à versão com React:** o Root Directory continua `site`, mas o Framework agora é **Other** (antes era Vite) e o Node precisa ser 24.x. Se o projeto já existia na Vercel, abra **Settings → General** e troque o Framework Preset para **Other**, confira o Node 24.x e faça um **Redeploy**.
 
 ## Passo 3: colocar as variáveis (ainda na mesma tela)
 
@@ -58,6 +63,14 @@ Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 2. O site do RotaU deve abrir. Abra também `https://SEU-ENDERECO/api/health`: deve aparecer `{"ok":true}`.
 3. Faça um cadastro de teste (estudante ou motorista, com senha) e depois saia e entre de novo com o mesmo e-mail e senha. No painel do Turso (aba **Data** do banco), as tabelas `students` e `drivers` devem mostrar o cadastro.
 4. O painel de administração fica em `https://SEU-ENDERECO/admin` e pede a senha configurada em `ADMIN_PASSWORD`.
+
+## Presença ("Vou hoje") e avisos
+
+Todo dia o estudante abre o painel e toca em **Vou hoje** ou **Não vou hoje**. O motorista vê, na hora, quantos vão, quantos não vão e quem ainda não respondeu, e usa os botões **Iniciar ida** e **Iniciar volta**. Ao iniciar, cada aluno que vai recebe um aviso com a previsão de chegada no ponto dele (cada ponto da rota soma uns 8 minutos).
+
+Os avisos aparecem no **sino** do painel (estudante e motorista) e, se a pessoa permitir, também como notificação do navegador **enquanto o site está aberto**. Eles ficam salvos nas tabelas `attendance`, `route_runs` e `notifications` do Turso; elas são criadas sozinhas na primeira visita, sem você fazer nada. Os motoristas já cadastrados ganham o horário de volta como "a combinar" (e as vans de demonstração, 22:40).
+
+**O que ficou de fora:** notificação com o site fechado (Web Push) precisa de chaves e de um serviço que dispare no horário, o que não cabe no plano gratuito da Vercel sem complicar; fica para uma próxima etapa. Dá para o motorista informar o horário de volta no cadastro, mas ainda não dá para editar depois.
 
 ## Vans de demonstração (fictícias)
 
@@ -89,10 +102,11 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 - **A publicação falhou:** na Vercel, abra **Deployments**, clique na publicação com erro e leia o **Build Logs**. Copie a mensagem e peça ajuda com ela.
 - **A lista de faculdades do cadastro está vazia:** isso acontecia em versões antigas do site com `SEED=false`. Na versão atual, a lista é criada sozinha. Depois que a publicação mais recente estiver **Ready**, abra o site e recarregue a página (`Ctrl + Shift + R`). Se ainda estiver vazia, abra `https://SEU-ENDERECO/api/colleges`: deve aparecer uma lista com 12 faculdades. Se aparecer um erro, me mande o texto.
 - **O site abre, mas o cadastro dá erro:** abra **Logs** do projeto na Vercel. Se falar de `DATABASE_URL`, a variável não foi criada ou está com o valor errado. Corrija em **Settings → Environment Variables** e faça **Redeploy** (em **Deployments**, menu de três pontinhos).
-- **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `site` (Passo 2).
+- **Página não encontrada em `/admin` ou ao recarregar:** confira se o **Root Directory** é `site` (Passo 2) e se o **Framework Preset** é **Other**.
+- **A publicação falha dizendo que o Node é antigo:** em **Settings → General → Node.js Version**, escolha **24.x** e faça **Redeploy**.
 - **O painel `/admin` abre sem pedir senha:** a variável `ADMIN_PASSWORD` não foi criada (nesse caso o painel deveria aparecer desativado). Crie e faça **Redeploy**.
 - **Variáveis novas não têm efeito:** a Vercel só lê variáveis novas em publicações novas. Sempre faça **Redeploy** depois de mudar.
 
 ## Desenvolvimento no seu computador
 
-Nada muda: `pnpm dev` na pasta `site` usa um arquivo local (`server/data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.
+Rode `pnpm dev` na pasta `site` (site e API sobem juntos em http://localhost:8443) e use um arquivo local (`data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.

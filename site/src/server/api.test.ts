@@ -3,7 +3,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createApp } from "./index.ts";
+import { createApp } from "./api.ts";
 import { DEMO_PASSWORD, DEMO_VAN_DOMAIN, defaultColleges, openDatabase } from "./db.ts";
 
 let server: Server;
@@ -266,4 +266,113 @@ test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo"
   await repo.syncDemoVans(false);
   const left = (await repo.adminOverview()).drivers;
   assert.deepEqual(left.map((d) => d.email), ["real@teste.com"]);
+});
+
+test("presença do dia: estudante avisa se vai e motorista e estudante são notificados", async () => {
+  const motorista = browser();
+  const driver = await motorista.call("POST", "/drivers", {
+    ...newDriver, email: "presenca@teste.com", plate: "PRE-5E00", capacity: 5, departureTime: "06:30", returnTime: "22:40", colleges: "Fatec",
+  });
+  assert.equal(driver.status, 201);
+  assert.equal(driver.body.returnTime, "22:40");
+
+  const ana = browser();
+  await ana.call("POST", "/students", { ...newStudent, name: "Ana Souza", email: "ana.presenca@teste.com", college: "Fatec", address: "Av. Afonso Vergueiro, 823" });
+
+  // sem reserva não dá para confirmar presença
+  const semVan = await ana.call("GET", "/attendance/today");
+  assert.equal(semVan.status, 200);
+  assert.equal(semVan.body.van, null);
+  assert.equal((await ana.call("PUT", "/attendance/today", { going: true })).status, 409);
+
+  const booking = await ana.call("POST", "/bookings", { driverId: driver.body.id });
+  await motorista.call("PATCH", `/bookings/${booking.body.id}`, { status: "Confirmado" });
+
+  const antes = await ana.call("GET", "/attendance/today");
+  assert.equal(antes.body.going, null);
+  assert.equal(antes.body.van.driver, "Joana Souza");
+  assert.deepEqual(antes.body.legs.map((l: { leg: string; scheduled: string }) => [l.leg, l.scheduled]), [["ida", "06:30"], ["volta", "22:40"]]);
+  assert.equal(antes.body.legs[0].eta, null);
+
+  assert.equal((await ana.call("PUT", "/attendance/today", { going: "sim" })).status, 400);
+  const vou = await ana.call("PUT", "/attendance/today", { going: true });
+  assert.equal(vou.status, 200);
+  assert.equal(vou.body.going, true);
+  assert.equal(vou.body.van.goingCount, 1);
+
+  // só estudante marca presença; motorista não
+  assert.equal((await motorista.call("PUT", "/attendance/today", { going: true })).status, 403);
+  assert.equal((await call("GET", "/attendance/today")).status, 401);
+
+  const painel = await motorista.call("GET", `/drivers/${driver.body.id}/dashboard`);
+  assert.equal(painel.body.today.going, 1);
+  assert.equal(painel.body.today.pending, 0);
+  assert.equal(painel.body.passengers[0].going, true);
+
+  const avisosMotorista = await motorista.call("GET", "/notifications");
+  assert.ok(avisosMotorista.body.items.some((n: { title: string }) => n.title === "Ana vai hoje"));
+  assert.ok(avisosMotorista.body.items.some((n: { title: string }) => n.title === "Nova reserva"));
+  const avisosAna = await ana.call("GET", "/notifications");
+  assert.equal(avisosAna.body.items[0].body, "Presença confirmada: você vai hoje. O motorista já sabe.");
+  assert.ok(avisosAna.body.items.some((n: { title: string }) => n.title === "Reserva confirmada"));
+  assert.equal(avisosAna.body.unread, 2);
+
+  // confirmar de novo não repete o aviso
+  await ana.call("PUT", "/attendance/today", { going: true });
+  assert.equal((await ana.call("GET", "/notifications")).body.unread, 2);
+
+  assert.equal((await ana.call("POST", "/notifications/read", {})).status, 200);
+  assert.equal((await ana.call("GET", "/notifications")).body.unread, 0);
+
+  // motorista inicia a ida: quem vai recebe a previsão; não dá para iniciar duas vezes
+  assert.equal((await ana.call("POST", `/drivers/${driver.body.id}/route-runs`, { leg: "ida" })).status, 403);
+  assert.equal((await motorista.call("POST", `/drivers/${driver.body.id}/route-runs`, { leg: "ontem" })).status, 400);
+  const ida = await motorista.call("POST", `/drivers/${driver.body.id}/route-runs`, { leg: "ida" });
+  assert.equal(ida.status, 201);
+  assert.match(ida.body.legs[0].startedAt, /^\d\d:\d\d$/);
+  assert.equal((await motorista.call("POST", `/drivers/${driver.body.id}/route-runs`, { leg: "ida" })).status, 409);
+
+  const depois = await ana.call("GET", "/attendance/today");
+  assert.match(depois.body.legs[0].eta, /^\d\d:\d\d$/);
+  assert.equal(depois.body.legs[1].eta, null);
+  const saiu = (await ana.call("GET", "/notifications")).body;
+  assert.equal(saiu.unread, 1);
+  assert.equal(saiu.items[0].title, "A van saiu para te buscar");
+  assert.match(saiu.items[0].body, new RegExp(`Previsão no seu ponto \\(Av. Afonso Vergueiro, 823\\): ${depois.body.legs[0].eta}`));
+
+  // não vou: o motorista fica sabendo
+  const naoVou = await ana.call("PUT", "/attendance/today", { going: false });
+  assert.equal(naoVou.body.going, false);
+  assert.equal(naoVou.body.legs[0].eta, null);
+  const painel2 = await motorista.call("GET", `/drivers/${driver.body.id}/dashboard`);
+  assert.equal(painel2.body.today.notGoing, 1);
+  assert.ok((await motorista.call("GET", "/notifications")).body.items.some((n: { title: string }) => n.title === "Ana não vai hoje"));
+});
+
+test("previsão de chegada segue a ordem da rota de quem vai hoje", async () => {
+  const repo = await openDatabase(":memory:");
+  const driver = await repo.createDriver({ name: "Rota", phone: "1", email: "rota@teste.com", vanModel: "Van", plate: "ROT-9Z99", departureTime: "06:30", returnTime: "22:40", cities: "Sorocaba", colleges: "Fatec" });
+  const ids: number[] = [];
+  for (const [index, name] of ["Primeira", "Segunda", "Terceira"].entries()) {
+    const student = await repo.createStudent({ name, phone: "1", email: `${name}@teste.com`, address: `Rua ${name}`, college: "Fatec" });
+    const booking = await repo.createBooking({ studentId: student.id, driverId: driver.id });
+    await repo.updateBooking(booking.id, { status: "Confirmado", pickupTime: `06:4${index}` });
+    ids.push(student.id);
+  }
+  const now = new Date("2026-10-23T09:30:00Z"); // 06:30 em Brasília, sexta-feira
+  await repo.setAttendance(ids[0]!, true, now);
+  await repo.setAttendance(ids[1]!, false, now); // a segunda não vai: a rota pula o ponto dela
+  await repo.setAttendance(ids[2]!, true, now);
+  const today = await repo.startRoute(driver.id, "ida", now);
+  assert.equal(today.weekday, "Sexta-feira");
+  assert.deepEqual([today.going, today.notGoing, today.pending], [2, 1, 0]);
+  assert.equal((await repo.studentToday(ids[0]!, now)).legs[0]!.eta, "06:38");
+  assert.equal((await repo.studentToday(ids[2]!, now)).legs[0]!.eta, "06:46");
+  assert.equal((await repo.studentToday(ids[1]!, now)).legs[0]!.eta, null);
+
+  // na volta, a ordem se inverte
+  const later = new Date("2026-10-24T01:40:00Z"); // 22:40 do mesmo dia em Brasília
+  await repo.startRoute(driver.id, "volta", later);
+  assert.equal((await repo.studentToday(ids[2]!, later)).legs[1]!.eta, "22:48");
+  assert.equal((await repo.studentToday(ids[0]!, later)).legs[1]!.eta, "22:56");
 });
