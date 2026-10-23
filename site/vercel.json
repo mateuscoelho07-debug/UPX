@@ -1,16 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "vite",
+  "framework": null,
   "installCommand": "pnpm install",
   "buildCommand": "pnpm build",
-  "outputDirectory": "dist",
+  "outputDirectory": "dist/rotau/browser",
   "functions": {
-    "api/index.ts": {
-      "includeFiles": "server/schema.sql"
+    "api/index.js": {
+      "includeFiles": "dist/rotau/server/**"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/api" }
   ]
 }

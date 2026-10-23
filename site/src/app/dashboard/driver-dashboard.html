@@ -1,0 +1,93 @@
+<div class="min-h-screen bg-slate-50 text-slate-900">
+  <app-dashboard-header profile="driver" (logout)="logout.emit()" (notified)="refresh()" />
+  <main class="mx-auto max-w-7xl px-5 py-10 lg:px-8">
+    <div class="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+      <div>
+        <span class="section-tag">Rota de hoje</span>
+        <h1 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Seus passageiros</h1>
+        <p class="mt-2 text-slate-600">{{ data() ? "Olá, " + firstName(data()!.driver.name) + "! " : "" }}Veja quem vai hoje, inicie a rota e mantenha tudo organizado.</p>
+      </div>
+      <div class="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-blue-950">
+        <span class="grid size-10 place-items-center rounded-xl bg-blue-600 text-white"><app-icon name="clock" class="size-5" /></span>
+        <div><span class="block text-xs font-bold uppercase tracking-wider text-blue-600">Próxima saída</span><strong class="text-lg">{{ data()?.driver?.departureTime ?? "--:--" }}</strong></div>
+      </div>
+    </div>
+
+    <app-status-message [loading]="loading() && !data()" [error]="error()" (retry)="load()" />
+
+    @if (data(); as d) {
+      <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Vão hoje</span><strong class="mt-2 block text-3xl font-extrabold text-emerald-600">{{ d.today.going }}</strong></article>
+        <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Não vão hoje</span><strong class="mt-2 block text-3xl font-extrabold text-slate-950">{{ d.today.notGoing }}</strong></article>
+        <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Ainda não responderam</span><strong class="mt-2 block text-3xl font-extrabold text-amber-600">{{ d.today.pending }}</strong></article>
+        <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Vagas livres</span><strong class="mt-2 block text-3xl font-extrabold text-blue-600">{{ d.driver.freeSeats }}</strong></article>
+      </div>
+
+      <section class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
+        <h2 class="text-lg font-extrabold text-slate-950">Iniciar rota</h2>
+        <p class="mt-1 text-sm text-slate-500">Ao iniciar, cada aluno que vai hoje recebe um aviso com a previsão de chegada no ponto dele.</p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          @for (leg of d.today.legs; track leg.leg) {
+            <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <strong class="block text-sm text-slate-950">{{ leg.leg === "ida" ? "Ida para a faculdade" : "Volta para casa" }}</strong>
+                <span class="text-sm text-slate-600">{{ leg.startedAt ? "Iniciada às " + leg.startedAt : leg.scheduled ? "Saída programada às " + leg.scheduled : "Sem horário definido" }}</span>
+              </div>
+              @if (leg.startedAt) {
+                <span class="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">Em andamento</span>
+              } @else {
+                <button class="btn-primary !px-4 !py-2.5 text-sm disabled:opacity-50" [disabled]="d.today.going === 0" (click)="start(leg.leg)">Iniciar {{ leg.leg }}</button>
+              }
+            </div>
+          }
+        </div>
+        @if (d.today.going === 0) {
+          <p class="mt-3 text-xs text-slate-500">Nenhum aluno confirmou presença ainda.</p>
+        }
+        @if (actionError()) {
+          <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ actionError() }}</p>
+        }
+      </section>
+
+      <section class="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-blue-900/5">
+        <div class="flex flex-col gap-2 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 class="text-lg font-extrabold text-slate-950">Lista de embarque</h2><p class="mt-1 text-sm text-slate-500">{{ d.today.weekday }}, rota {{ d.driver.cities[d.driver.cities.length - 1] ?? "" }} · destino principal {{ d.mainDestination }}</p></div>
+          <span class="text-sm font-semibold text-slate-500">{{ d.driver.occupied }} de {{ d.driver.capacity }} lugares ocupados</span>
+        </div>
+        @if (d.passengers.length === 0) {
+          <p class="px-6 py-10 text-center text-sm text-slate-500">Nenhum passageiro ainda. Assim que um estudante reservar uma vaga, ele aparece aqui.</p>
+        }
+        <div class="divide-y divide-slate-100">
+          @for (passenger of d.passengers; track passenger.bookingId) {
+            <article class="grid gap-4 px-6 py-5 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center" [class.opacity-60]="passenger.going === false">
+              <div class="flex items-center gap-3">
+                <span class="grid size-11 shrink-0 place-items-center rounded-full bg-blue-100 text-sm font-extrabold text-blue-700">{{ initials(passenger.name) }}</span>
+                <div>
+                  <strong class="block text-sm text-slate-950">{{ passenger.name }}</strong>
+                  @if (passenger.going === true) {
+                    <span class="text-xs font-bold text-emerald-700">Vai hoje</span>
+                  } @else if (passenger.going === false) {
+                    <span class="text-xs font-bold text-slate-500">Não vai hoje</span>
+                  } @else {
+                    <span class="text-xs text-slate-500">Ainda não respondeu</span>
+                  }
+                </div>
+              </div>
+              <span class="flex items-center gap-2 text-sm text-slate-600"><app-icon name="location" class="size-4 text-slate-400" />{{ passenger.pickup }}{{ passenger.pickupTime ? ", " + passenger.pickupTime : "" }}</span>
+              <span class="flex items-center gap-2 text-sm font-semibold text-slate-700"><app-icon name="student" class="size-4 text-slate-400" />{{ passenger.college }}</span>
+              @if (passenger.status === "Aguardando") {
+                <span class="flex items-center gap-2">
+                  <span class="w-fit rounded-full bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">Aguardando</span>
+                  <button class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700" (click)="setStatus(passenger, 'Confirmado')">Confirmar</button>
+                  <button class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200" (click)="setStatus(passenger, 'Cancelado')">Recusar</button>
+                </span>
+              } @else {
+                <span class="w-fit rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">{{ passenger.status }}</span>
+              }
+            </article>
+          }
+        </div>
+      </section>
+    }
+  </main>
+</div>
