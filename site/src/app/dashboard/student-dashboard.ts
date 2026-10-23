@@ -3,6 +3,7 @@ import { RouterLink } from "@angular/router";
 import { ApiRequestError, ApiService, type Student, type StudentToday, type TodayLeg, type Van } from "../api.service";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
+import { DeleteAccount } from "./delete-account";
 import { PresenceCard } from "./presence-card";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
@@ -10,7 +11,7 @@ import { StatusMessage } from "./status-message";
 // Painel do estudante: "Você vai hoje?", horários de ida e volta e as vans da faculdade
 @Component({
   selector: "app-student-dashboard",
-  imports: [DashboardHeader, Icon, PresenceCard, RouterLink, StatusMessage],
+  imports: [DashboardHeader, DeleteAccount, Icon, PresenceCard, RouterLink, StatusMessage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./student-dashboard.html",
 })

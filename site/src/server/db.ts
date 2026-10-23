@@ -172,6 +172,7 @@ export async function openDatabase(
   await migrate(db);
   const repo = createRepository(db);
   await repo.ensureColleges();
+  await repo.ensureOneVanPerStudent();
   if (process.env.SEED !== "false") await repo.seedDemoData();
   await repo.syncDemoVans(process.env.DEMO_VANS !== "false");
   return repo;
@@ -774,6 +775,65 @@ function createRepository(db: Client) {
           SELECT se.id, se.address, c.name AS college, se.results, se.created_at AS createdAt
           FROM searches se JOIN colleges c ON c.id = se.college_id ORDER BY se.id DESC LIMIT 500`),
       };
+    },
+
+    // Contas antigas podem ter várias reservas ativas: fica só uma por estudante (a confirmada,
+    // senão a mais recente) e o banco passa a impedir duas reservas ativas do mesmo estudante.
+    async ensureOneVanPerStudent(): Promise<void> {
+      const rows = await all<{ id: number; studentId: number; driverId: number; name: string }>(`
+        SELECT b.id, b.student_id AS studentId, b.driver_id AS driverId, s.name FROM bookings b JOIN students s ON s.id = b.student_id
+        WHERE b.status <> 'Cancelado' AND b.student_id IN (
+          SELECT student_id FROM bookings WHERE status <> 'Cancelado' GROUP BY student_id HAVING COUNT(*) > 1)
+        ORDER BY b.student_id, b.status = 'Confirmado' DESC, b.created_at DESC, b.id DESC`);
+      const kept = new Set<number>();
+      for (const row of rows) {
+        if (!kept.has(row.studentId)) {
+          kept.add(row.studentId);
+          continue;
+        }
+        await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [row.id]);
+        await notify({ profile: "driver", id: row.driverId }, "Vaga liberada", `${row.name} ficou em uma van só e saiu da sua rota.`);
+        await notify({ profile: "student", id: row.studentId }, "Uma van por aluno",
+          "Você tinha mais de uma van reservada. Mantivemos a reserva confirmada (ou a mais recente) e cancelamos as outras.");
+      }
+      await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_booking_per_student ON bookings(student_id) WHERE status <> 'Cancelado'");
+    },
+
+    // Senha (hash) da conta logada, para confirmar a exclusão
+    async passwordHashOf(user: SessionUser): Promise<string | null> {
+      const table = user.profile === "student" ? "students" : "drivers";
+      return (await get<{ hash: string | null }>(`SELECT password_hash AS hash FROM ${table} WHERE id = ?`, [user.id]))?.hash ?? null;
+    },
+
+    // Exclui a conta e tudo o que depende dela (reservas, presenças, avisos e sessões)
+    async deleteAccount(user: SessionUser): Promise<{ ok: true }> {
+      if (user.profile === "admin") throw new ApiError(403, "Esta conta não pode ser excluída.");
+      await transaction(async (tx) => {
+        if (user.profile === "student") {
+          const driverIds = await all<{ driverId: number }>(
+            "SELECT DISTINCT driver_id AS driverId FROM bookings WHERE student_id = ? AND status <> 'Cancelado'", [user.id], tx);
+          const student = await getStudent(user.id, tx);
+          for (const { driverId } of driverIds) {
+            await notify({ profile: "driver", id: driverId }, "Vaga liberada", `${student.name} excluiu a conta e saiu da sua van.`, tx);
+          }
+          for (const table of ["attendance", "bookings"]) await run(`DELETE FROM ${table} WHERE student_id = ?`, [user.id], tx);
+          await run("DELETE FROM students WHERE id = ?", [user.id], tx);
+        } else {
+          const riders = await all<{ studentId: number }>(
+            "SELECT DISTINCT student_id AS studentId FROM bookings WHERE driver_id = ? AND status <> 'Cancelado'", [user.id], tx);
+          const driver = await getDriver(user.id, tx);
+          for (const { studentId } of riders) {
+            await notify({ profile: "student", id: studentId }, "Van encerrada", `${driver.name} excluiu a conta. Escolha outra van no painel.`, tx);
+          }
+          for (const table of ["attendance", "route_runs", "bookings", "driver_cities", "driver_colleges"]) {
+            await run(`DELETE FROM ${table} WHERE driver_id = ?`, [user.id], tx);
+          }
+          await run("DELETE FROM drivers WHERE id = ?", [user.id], tx);
+        }
+        await run("DELETE FROM notifications WHERE profile = ? AND user_id = ?", [user.profile, user.id], tx);
+        await run("DELETE FROM sessions WHERE profile = ? AND user_id = ?", [user.profile, user.id], tx);
+      });
+      return { ok: true };
     },
 
     // Faculdades atendidas: dados de referência que o cadastro precisa, criados sempre
