@@ -111,6 +111,7 @@ export async function openDatabase(
   const repo = createRepository(db);
   await repo.ensureColleges();
   if (process.env.SEED !== "false") await repo.seedDemoData();
+  await repo.syncDemoVans(process.env.DEMO_VANS !== "false");
   return repo;
 }
 
@@ -147,6 +148,28 @@ function splitList(value: unknown): string[] {
 }
 
 const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"];
+
+// Vans FICTÍCIAS de demonstração: cobrem toda a região de Sorocaba e todas as faculdades,
+// para a busca nunca ficar vazia enquanto não há motoristas reais. São criadas sempre
+// (mesmo com SEED=false), mas sem senha: ninguém consegue entrar nessas contas.
+// Para removê-las, defina DEMO_VANS=false e publique de novo (ver PUBLICAR.md).
+export const DEMO_VAN_DOMAIN = "demo.rotau.invalid";
+
+type DemoVan = { key: string; name: string; vanModel: string; capacity: number; departureTime: string; rating: number; cities: string[] };
+
+const demoVans: DemoVan[] = [
+  { key: "centro", name: "Paulo Mendes", vanModel: "Renault Master", capacity: 15, departureTime: "17:40", rating: 4.8, cities: ["Sorocaba (Centro)", "Vila Hortência", "Jd. Faculdade"] },
+  { key: "norte", name: "Juliana Prado", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "17:20", rating: 4.9, cities: ["Sorocaba (Zona Norte)", "Éden", "Itavuvu"] },
+  { key: "sul", name: "Marcos Teixeira", vanModel: "Fiat Ducato", capacity: 14, departureTime: "17:45", rating: 4.7, cities: ["Sorocaba (Zona Sul)", "Campolim", "Jd. Europa"] },
+  { key: "leste", name: "Sandra Oliveira", vanModel: "Peugeot Boxer", capacity: 14, departureTime: "17:30", rating: 4.8, cities: ["Sorocaba (Zona Leste)", "Brigadeiro Tobias"] },
+  { key: "oeste", name: "Ricardo Nunes", vanModel: "Renault Master", capacity: 15, departureTime: "17:35", rating: 4.6, cities: ["Sorocaba (Zona Oeste)", "Wanel Ville"] },
+  { key: "votorantim", name: "Cláudia Ramos", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "17:00", rating: 4.9, cities: ["Votorantim", "Salto de Pirapora", "Piedade", "Pilar do Sul"] },
+  { key: "itu", name: "André Fonseca", vanModel: "Iveco Daily", capacity: 16, departureTime: "16:50", rating: 4.7, cities: ["Itu", "Salto"] },
+  { key: "portofeliz", name: "Beatriz Campos", vanModel: "Fiat Ducato", capacity: 14, departureTime: "16:40", rating: 4.8, cities: ["Porto Feliz", "Boituva", "Cerquilho", "Tietê"] },
+  { key: "tatui", name: "Rogério Lima", vanModel: "Renault Master", capacity: 15, departureTime: "16:45", rating: 4.7, cities: ["Tatuí", "Capela do Alto", "Iperó", "Araçoiaba da Serra"] },
+  { key: "itapetininga", name: "Helena Duarte", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "16:20", rating: 4.8, cities: ["Itapetininga", "Alambari", "Sarapuí"] },
+  { key: "saoroque", name: "Gustavo Pires", vanModel: "Peugeot Boxer", capacity: 14, departureTime: "16:50", rating: 4.6, cities: ["São Roque", "Mairinque", "Alumínio"] },
+];
 
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -479,6 +502,43 @@ function createRepository(db: Client) {
         // duas instâncias subindo juntas: a outra já criou os exemplos
         if (!(error instanceof ApiError && error.status === 409)) throw error;
       }
+    },
+
+    // Cria as vans de demonstração que faltam e liga todas a todas as faculdades
+    // (inclusive faculdades cadastradas depois). Idempotente. Com enabled=false, apaga as vans.
+    async syncDemoVans(enabled: boolean): Promise<void> {
+      const demoEmail = `%@${DEMO_VAN_DOMAIN}`;
+      if (!enabled) {
+        await transaction(async (tx) => {
+          const demoIds = "SELECT id FROM drivers WHERE email LIKE ?";
+          for (const table of ["bookings", "driver_cities", "driver_colleges"]) {
+            await run(`DELETE FROM ${table} WHERE driver_id IN (${demoIds})`, [demoEmail], tx);
+          }
+          await run(`DELETE FROM sessions WHERE profile = 'driver' AND user_id IN (${demoIds})`, [demoEmail], tx);
+          await run("DELETE FROM drivers WHERE email LIKE ?", [demoEmail], tx);
+        });
+        return;
+      }
+      const existing = new Set((await all<{ email: string }>(
+        "SELECT email FROM drivers WHERE email LIKE ?", [demoEmail])).map((row) => row.email.toLowerCase()));
+      for (const [index, van] of demoVans.entries()) {
+        const email = `van-${van.key}@${DEMO_VAN_DOMAIN}`;
+        if (existing.has(email)) continue;
+        const number = String(index + 1).padStart(2, "0");
+        try {
+          await repo.createDriver({
+            name: `${van.name} (demo)`, phone: `(15) 90000-00${number}`, email, vanModel: van.vanModel,
+            plate: `DEM-${number[0]}A${number}`, capacity: van.capacity, departureTime: van.departureTime,
+            rating: van.rating, cities: van.cities, colleges: defaultColleges,
+            // sem passwordHash: a conta não tem senha e o login sempre falha
+          });
+        } catch (error) {
+          // duas instâncias subindo juntas: a outra já criou esta van
+          if (!(error instanceof ApiError && error.status === 409)) throw error;
+        }
+      }
+      await run(`INSERT OR IGNORE INTO driver_colleges (driver_id, college_id)
+                 SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`, [demoEmail]);
     },
   };
 

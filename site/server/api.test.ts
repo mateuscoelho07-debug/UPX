@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createApp } from "./index.ts";
-import { DEMO_PASSWORD, openDatabase } from "./db.ts";
+import { DEMO_PASSWORD, DEMO_VAN_DOMAIN, openDatabase } from "./db.ts";
 
 let server: Server;
 let base: string;
@@ -59,7 +59,21 @@ test("lista as faculdades do seed", async () => {
 test("busca registra a pesquisa e conta as vans", async () => {
   const { status, body } = await call("POST", "/searches", { address: "Centro, Sorocaba", college: "UniFacens" });
   assert.equal(status, 201);
-  assert.equal(body.count, 2);
+  assert.equal(body.count, 13); // 2 contas de exemplo + 11 vans de demonstração
+});
+
+test("vans de demonstração atendem todas as faculdades e não aceitam login", async () => {
+  for (const college of ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip"]) {
+    const { body } = await call("GET", `/vans?college=${college}`);
+    const demo = body.filter((van: { driver: string }) => van.driver.endsWith("(demo)"));
+    assert.equal(demo.length, 11, college);
+  }
+  const { body } = await call("GET", "/vans?college=UniFacens");
+  assert.ok(body.some((van: { route: string }) => van.route === "Sorocaba (Centro) → UniFacens"));
+  for (const password of [DEMO_PASSWORD, "qualquer-senha"]) {
+    const login = await call("POST", "/auth/login", { profile: "driver", email: `van-centro@${DEMO_VAN_DOMAIN}`, password });
+    assert.equal(login.status, 401);
+  }
 });
 
 test("cadastro exige senha de pelo menos 8 caracteres", async () => {
@@ -237,5 +251,18 @@ test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo"
   assert.deepEqual(colleges.map((c) => c.name).sort(), ["Fatec", "UniFacens", "Ufscar", "Uniso", "Unip"].sort());
   const overview = await repo.adminOverview();
   assert.equal(overview.students.length, 0);
-  assert.equal(overview.drivers.length, 0);
+  // só as vans de demonstração, mesmo com SEED=false
+  assert.equal(overview.drivers.length, 11);
+  assert.ok(overview.drivers.every((d) => String(d.email).endsWith(`@${DEMO_VAN_DOMAIN}`)));
+
+  // rodar de novo não duplica, e faculdades novas também passam a ser atendidas
+  await repo.createDriver({ name: "Real", phone: "1", email: "real@teste.com", vanModel: "Van", plate: "REA-1L00", cities: "Itu", colleges: "Faculdade Nova", passwordHash: "x" });
+  await repo.syncDemoVans(true);
+  assert.equal((await repo.listVans({ college: "Faculdade Nova" })).length, 12);
+  assert.equal((await repo.adminOverview()).drivers.length, 12);
+
+  // DEMO_VANS=false: as vans de demonstração somem, os motoristas reais ficam
+  await repo.syncDemoVans(false);
+  const left = (await repo.adminOverview()).drivers;
+  assert.deepEqual(left.map((d) => d.email), ["real@teste.com"]);
 });

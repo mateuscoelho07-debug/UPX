@@ -19,7 +19,7 @@ Outros comandos:
 - `pnpm test:api`: testes da API.
 - `pnpm typecheck`: verificação de tipos do site e da API.
 
-O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar os motoristas e estudantes de exemplo; as faculdades são criadas sempre) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
+O banco é criado automaticamente em `server/data/rotau.db` na primeira execução, já com as faculdades e alguns motoristas e passageiros de exemplo. Para começar do zero, apague esse arquivo. Variáveis opcionais: `DB_PATH` (outro arquivo de banco), `DATABASE_URL` e `DATABASE_AUTH_TOKEN` (usar um banco do Turso em vez do arquivo local), `API_PORT` (porta da API), `SEED=false` (não criar os motoristas e estudantes de exemplo; as faculdades são criadas sempre), `DEMO_VANS=false` (apagar e não criar as 11 vans fictícias de demonstração, sem senha, que cobrem a região de Sorocaba e todas as faculdades; elas são criadas por padrão, mesmo com `SEED=false`) e `ADMIN_PASSWORD` (senha do painel `/admin`, veja abaixo).
 
 As contas de exemplo usam a senha `rotau1234` (por exemplo, motorista `carlos@rotau.com` ou estudante `mariana@email.com`). Contas criadas antes do login com senha não têm senha e não conseguem entrar: cadastre de novo ou apague o banco.
 
