@@ -2,13 +2,14 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, input, 
 import { ApiRequestError, ApiService, type BookingStatus, type DriverDashboardData, type Leg, type Passenger } from "../api.service";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
+import { DeleteAccount } from "./delete-account";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
 
 // Painel do motorista: quem vai hoje, rota do dia e botões para iniciar a ida e a volta
 @Component({
   selector: "app-driver-dashboard",
-  imports: [DashboardHeader, Icon, StatusMessage],
+  imports: [DashboardHeader, DeleteAccount, Icon, StatusMessage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./driver-dashboard.html",
 })

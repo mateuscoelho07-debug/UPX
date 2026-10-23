@@ -445,3 +445,66 @@ test("cada estudante escolhe uma van só: trocar, cancelar e ver os detalhes", a
   assert.equal((await lia.call("POST", "/bookings", { driverId: a.body.id })).status, 201);
   assert.equal((await lia.call("GET", "/attendance/today")).body.van.driver, "Joana Souza");
 });
+
+test("conta antiga com várias reservas ativas é arrumada ao abrir o banco", async () => {
+  const { createClient } = await import("@libsql/client");
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const file = join(mkdtempSync(join(tmpdir(), "rotau-")), "legado.db");
+  const url = `file:${file}`;
+  const first = await openDatabase(url);
+  const driverA = await first.createDriver({ name: "Van A", phone: "1", email: "a@leg.com", vanModel: "V", plate: "LEG-1A00", cities: "Itu", colleges: "Fatec" });
+  const driverB = await first.createDriver({ name: "Van B", phone: "1", email: "b@leg.com", vanModel: "V", plate: "LEG-2B00", cities: "Itu", colleges: "Fatec" });
+  const student = await first.createStudent({ name: "Antigo", phone: "1", email: "antigo@leg.com", address: "Rua 1", college: "Fatec", passwordHash: "x" });
+
+  // simula o banco de antes da regra: sem o índice e com duas reservas ativas
+  const raw = createClient({ url });
+  await raw.execute("DROP INDEX idx_one_active_booking_per_student");
+  await raw.execute({ sql: "INSERT INTO bookings (student_id, driver_id, pickup, status, created_at) VALUES (?, ?, 'Rua 1', 'Aguardando', '2026-01-01 10:00:00')", args: [student.id, driverA.id] });
+  await raw.execute({ sql: "INSERT INTO bookings (student_id, driver_id, pickup, status, created_at) VALUES (?, ?, 'Rua 1', 'Confirmado', '2026-01-01 09:00:00')", args: [student.id, driverB.id] });
+  raw.close();
+
+  const reopened = await openDatabase(url);
+  const vans = (await reopened.listVans({ studentId: student.id })).filter((van) => van.booked);
+  assert.deepEqual(vans.map((van) => van.driver), ["Van B"]); // a confirmada vence
+  assert.equal((await reopened.notifications({ profile: "student", id: student.id })).items[0]!.title, "Uma van por aluno");
+  assert.equal((await reopened.notifications({ profile: "driver", id: driverA.id })).items[0]!.title, "Vaga liberada");
+  await reopened.ensureOneVanPerStudent(); // rodar de novo não muda nada
+
+  // e o banco passa a barrar uma segunda reserva ativa, mesmo fora da API
+  const raw2 = createClient({ url });
+  await assert.rejects(raw2.execute({ sql: "INSERT INTO bookings (student_id, driver_id, pickup, status) VALUES (?, ?, 'x', 'Aguardando')", args: [student.id, driverA.id] }), /UNIQUE/);
+  raw2.close();
+});
+
+test("excluir a própria conta exige a senha e apaga os dados", async () => {
+  const motorista = browser();
+  const driver = await motorista.call("POST", "/drivers", { ...newDriver, email: "apagar-van@teste.com", plate: "DEL-1A00", colleges: "Unip" });
+  const aluno = browser();
+  await aluno.call("POST", "/students", { ...newStudent, email: "apagar@teste.com", college: "Unip" });
+  const reserva = await aluno.call("POST", "/bookings", { driverId: driver.body.id });
+  await motorista.call("PATCH", `/bookings/${reserva.body.id}`, { status: "Confirmado" });
+  await aluno.call("PUT", "/attendance/today", { going: true });
+
+  assert.equal((await call("POST", "/account/delete", { password: "rafa-segura" })).status, 401);
+  assert.equal((await aluno.call("POST", "/account/delete", { password: "errada123" })).status, 401);
+  assert.equal((await aluno.call("POST", "/account/delete", {})).status, 401);
+  assert.equal((await aluno.call("GET", "/auth/me")).status, 200); // senha errada não derruba a sessão
+
+  assert.equal((await aluno.call("POST", "/account/delete", { password: "rafa-segura" })).status, 200);
+  assert.equal(aluno.cookie, "");
+  assert.equal((await aluno.call("GET", "/auth/me")).status, 401);
+  assert.equal((await call("POST", "/auth/login", { profile: "student", email: "apagar@teste.com", password: "rafa-segura" })).status, 401);
+
+  // o motorista fica sem o passageiro e é avisado
+  const painel = await motorista.call("GET", `/drivers/${driver.body.id}/dashboard`);
+  assert.equal(painel.body.passengers.length, 0);
+  assert.ok((await motorista.call("GET", "/notifications")).body.items.some((n: { body: string }) => /excluiu a conta/.test(n.body)));
+
+  // motorista também pode excluir; a van some da busca
+  assert.equal((await motorista.call("POST", "/account/delete", { password: "joana-segura" })).status, 200);
+  const vans = await call("GET", "/vans?college=Unip");
+  assert.ok(!vans.body.some((v: { id: number }) => v.id === driver.body.id));
+  assert.equal((await motorista.call("GET", `/drivers/${driver.body.id}/dashboard`)).status, 401);
+});

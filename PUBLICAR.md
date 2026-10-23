@@ -74,7 +74,9 @@ Os avisos aparecem no **sino** do painel (estudante e motorista) e, se a pessoa 
 
 ## Uma van por aluno
 
-Cada estudante fica em **uma van só**. Na tela "Vans disponíveis" ele toca no card de qualquer van para ver motorista, rota, cidades, horários de ida e volta, faculdades e vagas. Dentro da van reservada ele confirma **Vou hoje / Não vou hoje** e pode **cancelar a vaga**; nas outras vans aparece **Trocar para esta van**. A regra também vale na API (não dá para burlar). Contas que já tinham mais de uma reserva antes dessa mudança continuam como estão; a regra vale para as próximas reservas. Nada muda na Vercel nem no Turso: não há tabela nova.
+Cada estudante fica em **uma van só**. Na tela "Vans disponíveis" ele toca no card de qualquer van para ver motorista, rota, cidades, horários de ida e volta, faculdades e vagas. Dentro da van reservada ele confirma **Vou hoje / Não vou hoje** e pode **cancelar a vaga**; nas outras vans aparece **Trocar para esta van**. A regra também vale na API (não dá para burlar). Contas que já tinham mais de uma reserva são arrumadas sozinhas na próxima visita ao site depois da publicação: fica a reserva confirmada (ou a mais recente), as outras são canceladas e o aluno recebe um aviso no sino. O banco também passa a impedir duas reservas ativas do mesmo aluno.
+
+**Excluir a própria conta:** no fim do painel (aluno e motorista) há o link **Excluir minha conta**. Ele pede a senha e apaga a conta, as reservas, as presenças e os avisos; o motorista da van é avisado. Nada muda na Vercel nem no Turso: não há tabela nova.
 
 ## Vans de demonstração (fictícias)
 
