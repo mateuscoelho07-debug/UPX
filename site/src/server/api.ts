@@ -2,7 +2,7 @@
 // tanto no `pnpm dev` quanto na Vercel.
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { ApiError, openDatabase, type Repository } from "./db.ts";
+import { ApiError, DEMO_VAN_DOMAIN, openDatabase, type Repository } from "./db.ts";
 import {
   clearSessionCookie,
   createLoginLimiter,
@@ -123,6 +123,7 @@ export function createApp(
   // Cadastro: cria a conta com senha e já deixa o usuário logado
   app.post("/api/students", route(async (req, res) => {
     const data = body(req) as Record<string, unknown>;
+    if (String(data.email ?? "").toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`)) throw new ApiError(400, "Use um e-mail real para criar a conta.");
     const passwordHash = await hashPassword(validatePassword(data.password));
     const student = await repo.createStudent({ ...data, passwordHash });
     await startSession(req, res, { profile: "student", id: student.id });
