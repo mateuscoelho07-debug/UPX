@@ -82,9 +82,21 @@ export type Passenger = {
 };
 
 export type Leg = "ida" | "volta";
-export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null };
+// `predicted`: a previsão vem do horário programado (a van ainda não saiu)
+export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null; predicted: boolean };
 
-export type DriverToday = { day: string; weekday: string; going: number; notGoing: number; pending: number; legs: TodayLeg[] };
+// Rota calculada pelos endereços de quem vai hoje
+export type RouteStop = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
+export type LegRoute = { destination: string | null; totalMinutes: number; distanceKm: number; arrival: string | null; stops: RouteStop[] };
+
+export type DriverToday = {
+  day: string;
+  weekday: string;
+  going: number;
+  notGoing: number;
+  pending: number;
+  legs: (TodayLeg & { route: LegRoute | null })[];
+};
 
 export type StudentToday = {
   day: string;
