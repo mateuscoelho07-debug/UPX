@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS students (
   address    TEXT NOT NULL,
   college_id INTEGER NOT NULL REFERENCES colleges(id),
   password_hash TEXT,  -- scrypt (ver server/auth.ts); nulo = conta sem senha, não consegue entrar
+  lat        REAL,     -- posição do endereço (só nos alunos de demonstração; nos outros é calculada pelo bairro/cidade)
+  lng        REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

@@ -97,7 +97,14 @@ export class StudentDashboard implements OnInit {
   legText(leg: TodayLeg, going: boolean | null): string {
     if (going === false) return "Você avisou que não vai hoje, então a van não passa no seu ponto.";
     const scheduled = leg.scheduled ? `Saída programada às ${leg.scheduled}.` : "Horário de saída a combinar com o motorista.";
-    if (!leg.startedAt) return `${scheduled} A previsão de chegada aparece quando o motorista iniciar a rota.`;
+    if (!leg.startedAt) {
+      if (leg.eta) {
+        return leg.leg === "ida"
+          ? `${scheduled} Previsão de busca no seu ponto: ${leg.eta} (calculada pelos endereços de quem vai hoje).`
+          : `${scheduled} Previsão de chegada em casa: ${leg.eta} (calculada pelos endereços de quem vai hoje).`;
+      }
+      return `${scheduled} Confirme que você vai para ver a previsão de chegada.`;
+    }
     if (!leg.eta) return `A van saiu às ${leg.startedAt}. Confirme que você vai para ver a previsão de chegada.`;
     return leg.leg === "ida"
       ? `A van saiu às ${leg.startedAt}. Previsão no seu ponto: ${leg.eta}.`

@@ -251,10 +251,14 @@ test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo"
   const colleges = await repo.listColleges();
   assert.deepEqual(colleges.map((c) => c.name).sort(), [...defaultColleges].sort());
   const overview = await repo.adminOverview();
-  assert.equal(overview.students.length, 0);
-  // só as vans de demonstração, mesmo com SEED=false
+  // só as contas de demonstração (vans e alunos), mesmo com SEED=false; nenhuma tem senha
+  assert.equal(overview.students.length, 55);
+  assert.ok(overview.students.every((s) => String(s.email).endsWith(`@${DEMO_VAN_DOMAIN}`) && String(s.name).endsWith("(demo)")));
   assert.equal(overview.drivers.length, 11);
   assert.ok(overview.drivers.every((d) => String(d.email).endsWith(`@${DEMO_VAN_DOMAIN}`)));
+  assert.ok(overview.drivers.every((d) => Number(d.occupied) === 5));
+  await repo.syncDemoVans(true); // idempotente: não repete alunos
+  assert.equal((await repo.adminOverview()).students.length, 55);
 
   // rodar de novo não duplica, e faculdades novas também passam a ser atendidas
   await repo.createDriver({ name: "Real", phone: "1", email: "real@teste.com", vanModel: "Van", plate: "REA-1L00", cities: "Itu", colleges: "Faculdade Nova", passwordHash: "x" });
@@ -334,7 +338,8 @@ test("presença do dia: estudante avisa se vai e motorista e estudante são noti
 
   const depois = await ana.call("GET", "/attendance/today");
   assert.match(depois.body.legs[0].eta, /^\d\d:\d\d$/);
-  assert.equal(depois.body.legs[1].eta, null);
+  assert.equal(depois.body.legs[0].predicted, false);
+  assert.equal(depois.body.legs[1].predicted, true); // a volta ainda não saiu: previsão pelo horário programado
   const saiu = (await ana.call("GET", "/notifications")).body;
   assert.equal(saiu.unread, 1);
   assert.equal(saiu.items[0].title, "A van saiu para te buscar");
@@ -366,15 +371,15 @@ test("previsão de chegada segue a ordem da rota de quem vai hoje", async () => 
   const today = await repo.startRoute(driver.id, "ida", now);
   assert.equal(today.weekday, "Sexta-feira");
   assert.deepEqual([today.going, today.notGoing, today.pending], [2, 1, 0]);
-  assert.equal((await repo.studentToday(ids[0]!, now)).legs[0]!.eta, "06:38");
-  assert.equal((await repo.studentToday(ids[2]!, now)).legs[0]!.eta, "06:46");
+  // endereços que não conseguimos localizar: 6 min até o primeiro ponto, 2 min parado e mais 6 até o seguinte
+  assert.equal((await repo.studentToday(ids[0]!, now)).legs[0]!.eta, "06:36");
+  assert.equal((await repo.studentToday(ids[2]!, now)).legs[0]!.eta, "06:44");
   assert.equal((await repo.studentToday(ids[1]!, now)).legs[0]!.eta, null);
 
-  // na volta, a ordem se inverte
   const later = new Date("2026-10-24T01:40:00Z"); // 22:40 do mesmo dia em Brasília
   await repo.startRoute(driver.id, "volta", later);
-  assert.equal((await repo.studentToday(ids[2]!, later)).legs[1]!.eta, "22:48");
-  assert.equal((await repo.studentToday(ids[0]!, later)).legs[1]!.eta, "22:56");
+  assert.equal((await repo.studentToday(ids[0]!, later)).legs[1]!.eta, "22:46");
+  assert.equal((await repo.studentToday(ids[2]!, later)).legs[1]!.eta, "22:54");
 });
 
 test("cada estudante escolhe uma van só: trocar, cancelar e ver os detalhes", async () => {
@@ -507,4 +512,46 @@ test("excluir a própria conta exige a senha e apaga os dados", async () => {
   const vans = await call("GET", "/vans?college=Unip");
   assert.ok(!vans.body.some((v: { id: number }) => v.id === driver.body.id));
   assert.equal((await motorista.call("GET", `/drivers/${driver.body.id}/dashboard`)).status, 401);
+});
+
+test("alunos de demonstração vão todo dia e a rota é calculada pelos endereços", async () => {
+  const repo = await openDatabase(":memory:");
+  const now = new Date("2026-10-23T19:00:00Z"); // 16:00 em Brasília
+  const vans = (await repo.adminOverview()).drivers;
+  const sul = vans.find((d) => d.email === `van-sul@${DEMO_VAN_DOMAIN}`)!;
+  const painel = await repo.driverDashboard(Number(sul.id), now);
+  assert.equal(painel.passengers.length, 5);
+  assert.ok(painel.passengers.every((p) => p.going === true));
+  const ida = painel.today.legs[0]!;
+  assert.equal(ida.scheduled, "17:45");
+  assert.equal(ida.predicted, true);
+  assert.equal(ida.route!.stops.length, 5);
+  assert.deepEqual(ida.route!.stops.map((s) => s.order), [1, 2, 3, 4, 5]);
+  assert.ok(ida.route!.stops[0]!.eta! > "17:45");
+  const times = ida.route!.stops.map((s) => s.eta!);
+  assert.deepEqual(times, [...times].sort()); // a previsão cresce ao longo da rota
+  assert.ok(ida.route!.totalMinutes > 0 && ida.route!.distanceKm > 0);
+  assert.ok(ida.route!.arrival! > times.at(-1)!);
+
+  // uma aluna nova entra na van e a previsão dela também considera os colegas
+  const ana = await repo.createStudent({ name: "Ana", phone: "1", email: "ana@teste.com", address: "Rua Nova, 10 - Campolim, Sorocaba", college: "Fatec" });
+  const reserva = await repo.createBooking({ studentId: ana.id, driverId: Number(sul.id) });
+  await repo.updateBooking(reserva.id, { status: "Confirmado" });
+  assert.equal((await repo.studentToday(ana.id, now)).legs[0]!.eta, null); // ainda não confirmou presença
+  await repo.setAttendance(ana.id, true, now);
+  const hoje = await repo.studentToday(ana.id, now);
+  assert.equal(hoje.van!.goingCount, 6);
+  assert.match(hoje.legs[0]!.eta!, /^\d\d:\d\d$/);
+  assert.equal(hoje.legs[0]!.predicted, true);
+  assert.equal((await repo.driverDashboard(Number(sul.id), now)).today.legs[0]!.route!.stops.length, 6);
+
+  // quem avisa que não vai sai da rota
+  await repo.setAttendance(ana.id, false, now);
+  assert.equal((await repo.driverDashboard(Number(sul.id), now)).today.legs[0]!.route!.stops.length, 5);
+
+});
+
+test("e-mail de demonstração não serve para criar conta de verdade", async () => {
+  const res = await call("POST", "/students", { ...newStudent, email: `fake@${DEMO_VAN_DOMAIN}` });
+  assert.equal(res.status, 400);
 });

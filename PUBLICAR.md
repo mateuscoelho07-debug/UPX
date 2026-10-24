@@ -86,6 +86,19 @@ Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de dem
 - São criadas mesmo com `SEED=false`, e só uma vez (publicar de novo não duplica).
 - **Ninguém consegue entrar nessas contas:** elas não têm senha, então o login sempre falha.
 - Um estudante pode reservar vaga numa van de demonstração, mas ninguém vai confirmar a reserva.
+- Cada van de demonstração já vem com **5 alunos fictícios** ("(demo)" no nome, 55 no total), com endereços que parecem reais (ruas, bairros e cidades da região) mas casas inventadas. Eles também não têm senha e são apagados junto com as vans por `DEMO_VANS=false`.
+- Os alunos de demonstração contam como **"Vou hoje"** todos os dias, para o painel do motorista e a previsão sempre terem o que mostrar.
+
+## Como o tempo de busca é calculado
+
+O RotaU **não usa serviço de mapas** (nada para configurar, grátis e sem chave). O cálculo roda no próprio site:
+
+1. Cada endereço vira um ponto no mapa. Os alunos de demonstração têm coordenadas fixas. Para os endereços que as pessoas digitam, o site procura o **bairro ou a cidade** no texto (ex.: "Campolim", "Itu") e usa o ponto aproximado dele. Se não achar, esse aluno entra no fim da rota com um tempo padrão de 6 minutos.
+2. A ordem das paradas é o caminho mais curto (vizinho mais próximo, melhorado pelo método 2-opt). Na ida a van sai da primeira cidade dela e termina na faculdade; na volta sai da faculdade e deixa cada aluno em casa.
+3. O tempo entre dois pontos vem da distância em linha reta, aumentada em 35% (as ruas não são retas): até 8 km a 30 km/h (cidade) e o que passar disso a 70 km/h (estrada). Cada parada soma 2 minutos.
+4. Só entra na conta quem confirmou **"Vou hoje"**. Antes de a van sair, a previsão usa o horário programado da van; depois que o motorista inicia a rota, usa a hora real da saída.
+
+É uma **estimativa**: não vê trânsito nem o endereço exato de quem digitou só uma rua. Se um dia quiserem mais precisão, o próximo passo é trocar a linha reta por um serviço de rotas (ex.: OpenRouteService, que pede uma chave grátis).
 
 **Como remover quando houver motoristas reais:** na Vercel, abra **Settings → Environment Variables**, crie a variável `DEMO_VANS` com o valor `false` e faça **Redeploy**. Na próxima visita ao site, as vans de demonstração (e as reservas feitas nelas) são apagadas. Os motoristas reais não são afetados. Enquanto `DEMO_VANS=false` existir, elas não voltam.
 

@@ -8,7 +8,10 @@ import { pathToFileURL } from "node:url";
 import { ApiError } from "./errors.ts";
 import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 import { schema } from "./schema.ts";
-import { addMinutes, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
+import { demoStudents } from "./demo.ts";
+import { approximatePoint, collegePoint, placePoint } from "./places.ts";
+import { planRoute, type Point, type RoutePlan } from "./route.ts";
+import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
 
 export { ApiError };
 
@@ -90,6 +93,9 @@ export type Passenger = {
   going: boolean | null;
 };
 
+// Passageiro com a posição do endereço (uso interno: não vai para o navegador)
+type Rider = Passenger & { point: Point | null };
+
 export type Booking = { id: number; status: BookingStatus; pickup: string; pickupTime: string | null };
 
 export type StudentInput = {
@@ -122,7 +128,12 @@ export type Leg = "ida" | "volta";
 export const legs: Leg[] = ["ida", "volta"];
 
 // Uma perna da viagem de hoje: horário programado, quando o motorista saiu e a previsão no ponto do estudante
-export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null };
+// `eta` = previsão no ponto do estudante; `predicted` = calculada a partir do horário programado (a van ainda não saiu)
+export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null; predicted: boolean };
+
+// Rota calculada pelos endereços: ordem das paradas, tempo e distância
+export type RouteStopInfo = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
+export type LegRoute = { destination: string | null; totalMinutes: number; distanceKm: number; arrival: string | null; stops: RouteStopInfo[] };
 
 export type StudentToday = {
   day: string;
@@ -147,13 +158,10 @@ export type DriverToday = {
   going: number;
   notGoing: number;
   pending: number;
-  legs: TodayLeg[];
+  legs: (TodayLeg & { route: LegRoute | null })[];
 };
 
 export type Notification = { id: number; title: string; body: string; createdAt: string; read: boolean };
-
-// Minutos estimados entre um ponto de embarque e o próximo (a rota passa pelos estudantes que vão hoje, em ordem)
-export const MINUTES_PER_STOP = 8;
 
 export type Repository = ReturnType<typeof createRepository>;
 
@@ -180,11 +188,14 @@ export async function openDatabase(
 
 // Bancos antigos não têm as colunas novas: senha (login) e horário da volta (presença)
 async function migrate(db: Client) {
-  const columns: [string, string][] = [["students", "password_hash"], ["drivers", "password_hash"], ["drivers", "return_time"]];
-  for (const [table, column] of columns) {
+  const columns: [string, string, string][] = [
+    ["students", "password_hash", "TEXT"], ["drivers", "password_hash", "TEXT"], ["drivers", "return_time", "TEXT"],
+    ["students", "lat", "REAL"], ["students", "lng", "REAL"],
+  ];
+  for (const [table, column, type] of columns) {
     const { rows } = await db.execute(`PRAGMA table_info(${table})`);
     if (!rows.some((row) => row.name === column)) {
-      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
   }
 }
@@ -354,17 +365,24 @@ function createRepository(db: Client) {
       ORDER BY status = 'Confirmado' DESC, created_at DESC, id DESC LIMIT 1`, [studentId]);
   }
 
-  // Passageiros da van na ordem da rota, com a presença do dia (null = ainda não respondeu)
-  async function passengersOf(driverId: number, day: string): Promise<Passenger[]> {
-    const rows = await all<Omit<Passenger, "going"> & { going: number | null }>(`
+  // Passageiros da van com a presença do dia (null = ainda não respondeu). Os alunos de demonstração
+  // vão todo dia, a menos que a presença deles seja registrada. `point` = posição do endereço, se conhecida.
+  async function passengersOf(driverId: number, day: string): Promise<Rider[]> {
+    const rows = await all<Omit<Passenger, "going"> & { going: number | null; lat: number | null; lng: number | null; home: string }>(`
       SELECT b.id AS bookingId, s.id AS studentId, s.name, b.pickup, b.pickup_time AS pickupTime, c.name AS college, b.status,
-             (SELECT a.going FROM attendance a WHERE a.student_id = s.id AND a.driver_id = b.driver_id AND a.day = ?) AS going
+             s.lat, s.lng, s.address AS home,
+             coalesce((SELECT a.going FROM attendance a WHERE a.student_id = s.id AND a.driver_id = b.driver_id AND a.day = ?),
+                      CASE WHEN s.email LIKE ? THEN 1 END) AS going
       FROM bookings b
       JOIN students s ON s.id = b.student_id
       JOIN colleges c ON c.id = s.college_id
       WHERE b.driver_id = ? AND b.status <> 'Cancelado'
-      ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at, b.id`, [day, driverId]);
-    return rows.map((row) => ({ ...row, going: row.going === null ? null : Boolean(row.going) }));
+      ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at, b.id`, [day, `%@${DEMO_VAN_DOMAIN}`, driverId]);
+    return rows.map(({ lat, lng, home, going, ...row }) => ({
+      ...row,
+      going: going === null ? null : Boolean(going),
+      point: lat !== null && lng !== null ? { lat, lng } : approximatePoint(row.pickup) ?? approximatePoint(home),
+    }));
   }
 
   async function routeRuns(driverId: number, day: string): Promise<Partial<Record<Leg, Date>>> {
@@ -377,13 +395,26 @@ function createRepository(db: Client) {
     return leg === "ida" ? driver.departureTime : driver.returnTime;
   }
 
-  // Estimativa simples baseada na rota de todos que vão hoje: cada ponto leva MINUTES_PER_STOP.
-  // Na ida a van passa pelos pontos na ordem da lista; na volta, na ordem inversa.
-  function estimateArrival(startedAt: Date, leg: Leg, riders: Passenger[], studentId: number): Date | null {
-    const index = riders.findIndex((rider) => rider.studentId === studentId);
-    if (index < 0) return null;
-    const position = leg === "ida" ? index + 1 : riders.length - index;
-    return addMinutes(startedAt, position * MINUTES_PER_STOP);
+  // Rota de uma viagem com quem vai hoje, calculada pelos endereços (ver route.ts).
+  // Ida: sai da primeira cidade da van, pega os estudantes e termina na faculdade.
+  // Volta: sai da faculdade e deixa cada estudante em casa.
+  function planLeg(driver: Driver, leg: Leg, riders: Rider[]): { plan: RoutePlan; destination: string | null } | null {
+    if (riders.length === 0) return null;
+    const counts = new Map<string, number>();
+    for (const rider of riders) counts.set(rider.college, (counts.get(rider.college) ?? 0) + 1);
+    const destination = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? driver.colleges[0] ?? null;
+    const college: Point | null = destination ? collegePoint(destination) : null;
+    const start: Point | null = placePoint(driver.cities[0] ?? "");
+    const stops = riders.map((rider) => ({ id: rider.studentId, point: rider.point }));
+    const plan = leg === "ida" ? planRoute(start, stops, college) : planRoute(college, stops);
+    return { plan, destination };
+  }
+
+  // Horário (HH:MM) em que a van chega a um ponto da rota: conta a partir da saída real
+  // ou, se ainda não saiu, do horário programado (previsão).
+  function clockAt(started: Date | undefined, scheduled: string | null, minutes: number): { time: string; predicted: boolean } | null {
+    if (started) return { time: localTime(addMinutes(started, minutes)), predicted: false };
+    return scheduled ? { time: clockPlus(scheduled, minutes), predicted: true } : null;
   }
 
   const repo = {
@@ -540,7 +571,8 @@ function createRepository(db: Client) {
     async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday }> {
       const driver = await getDriver(driverId);
       const day = localDay(now);
-      const passengers = await passengersOf(driverId, day);
+      const riders = await passengersOf(driverId, day);
+      const passengers: Passenger[] = riders.map(({ point: _point, ...passenger }) => passenger);
       const counts = new Map<string, number>();
       for (const passenger of passengers) counts.set(passenger.college, (counts.get(passenger.college) ?? 0) + 1);
       const mainDestination = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? driver.colleges[0] ?? "—";
@@ -551,7 +583,25 @@ function createRepository(db: Client) {
         going: passengers.filter((p) => p.going === true).length,
         notGoing: passengers.filter((p) => p.going === false).length,
         pending: passengers.filter((p) => p.going === null).length,
-        legs: legs.map((leg) => ({ leg, scheduled: scheduledTime(driver, leg), startedAt: runs[leg] ? localTime(runs[leg]) : null, eta: null })),
+        legs: legs.map((leg) => {
+          const started = runs[leg];
+          const scheduled = scheduledTime(driver, leg);
+          const planned = planLeg(driver, leg, riders.filter((r) => r.going === true));
+          let route: LegRoute | null = null;
+          let predicted = false;
+          if (planned) {
+            const names = new Map(riders.map((r) => [r.studentId, r]));
+            const stops = planned.plan.stops.map((stop) => {
+              const rider = names.get(stop.id)!;
+              const at = clockAt(started, scheduled, stop.minutes);
+              predicted = at?.predicted ?? false;
+              return { studentId: rider.studentId, name: rider.name, pickup: rider.pickup, order: stop.order, eta: at?.time ?? null };
+            });
+            const end = clockAt(started, scheduled, planned.plan.totalMinutes);
+            route = { destination: planned.destination, totalMinutes: planned.plan.totalMinutes, distanceKm: planned.plan.distanceKm, arrival: end?.time ?? null, stops };
+          }
+          return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: null, predicted, route };
+        }),
       };
       return { driver, passengers, mainDestination, today };
     },
@@ -562,7 +612,7 @@ function createRepository(db: Client) {
       const base = { day, weekday: weekdayOf(day) };
       const booking = await activeBooking(studentId);
       if (!booking) {
-        return { ...base, going: null, van: null, legs: legs.map((leg) => ({ leg, scheduled: null, startedAt: null, eta: null })) };
+        return { ...base, going: null, van: null, legs: legs.map((leg) => ({ leg, scheduled: null, startedAt: null, eta: null, predicted: false })) };
       }
       const driver = await getDriver(booking.driverId);
       const passengers = await passengersOf(driver.id, day);
@@ -584,8 +634,10 @@ function createRepository(db: Client) {
         },
         legs: legs.map((leg) => {
           const started = runs[leg];
-          const eta = started && going === true ? estimateArrival(started, leg, riders, studentId) : null;
-          return { leg, scheduled: scheduledTime(driver, leg), startedAt: started ? localTime(started) : null, eta: eta ? localTime(eta) : null };
+          const scheduled = scheduledTime(driver, leg);
+          const minutes = going === true ? planLeg(driver, leg, riders)?.plan.stops.find((stop) => stop.id === studentId)?.minutes : undefined;
+          const at = minutes === undefined ? null : clockAt(started, scheduled, minutes);
+          return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: at?.time ?? null, predicted: at?.predicted ?? false };
         }),
       };
     },
@@ -621,8 +673,10 @@ function createRepository(db: Client) {
       await insertOrConflict("INSERT INTO route_runs (driver_id, day, leg, started_at) VALUES (?, ?, ?, ?)",
         [driverId, day, leg, startedAt], leg === "ida" ? "Você já iniciou a ida de hoje." : "Você já iniciou a volta de hoje.");
       const riders = (await passengersOf(driverId, day)).filter((p) => p.going === true);
+      const planned = planLeg(await getDriver(driverId), leg, riders);
       for (const rider of riders) {
-        const eta = localTime(estimateArrival(now, leg, riders, rider.studentId)!);
+        const minutes = planned!.plan.stops.find((stop) => stop.id === rider.studentId)!.minutes;
+        const eta = localTime(addMinutes(now, minutes));
         await notify({ profile: "student", id: rider.studentId },
           leg === "ida" ? "A van saiu para te buscar" : "A van saiu da faculdade",
           leg === "ida"
@@ -869,6 +923,12 @@ function createRepository(db: Client) {
             await run(`DELETE FROM ${table} WHERE profile = 'driver' AND user_id IN (${demoIds})`, [demoEmail], tx);
           }
           await run("DELETE FROM drivers WHERE email LIKE ?", [demoEmail], tx);
+          // alunos de demonstração (as reservas deles na van já foram apagadas acima)
+          const demoStudentIds = "SELECT id FROM students WHERE email LIKE ?";
+          await run(`DELETE FROM attendance WHERE student_id IN (${demoStudentIds})`, [demoEmail], tx);
+          await run(`DELETE FROM bookings WHERE student_id IN (${demoStudentIds})`, [demoEmail], tx);
+          await run(`DELETE FROM notifications WHERE profile = 'student' AND user_id IN (${demoStudentIds})`, [demoEmail], tx);
+          await run("DELETE FROM students WHERE email LIKE ?", [demoEmail], tx);
         });
         return;
       }
@@ -894,6 +954,32 @@ function createRepository(db: Client) {
                  SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`, [demoEmail]);
       // vans criadas antes do horário de volta existir
       await run("UPDATE drivers SET return_time = ? WHERE email LIKE ? AND return_time IS NULL", [DEMO_RETURN_TIME, demoEmail]);
+      await repo.syncDemoStudents();
+    },
+
+    // Alunos fictícios dentro das vans de demonstração, com endereço e posição fixos. Idempotente.
+    async syncDemoStudents(): Promise<void> {
+      const demoEmail = `%@${DEMO_VAN_DOMAIN}`;
+      const existing = new Set((await all<{ email: string }>(
+        "SELECT email FROM students WHERE email LIKE ?", [demoEmail])).map((row) => row.email.toLowerCase()));
+      for (const [key, students] of Object.entries(demoStudents)) {
+        const driver = await get<{ id: number }>("SELECT id FROM drivers WHERE email = ?", [`van-${key}@${DEMO_VAN_DOMAIN}`]);
+        if (!driver) continue;
+        for (const [index, [name, address, lat, lng, college]] of students.entries()) {
+          const email = `aluno-${key}-${index + 1}@${DEMO_VAN_DOMAIN}`;
+          if (existing.has(email)) continue;
+          try {
+            // sem passwordHash: a conta não tem senha e o login sempre falha
+            const student = await repo.createStudent({ name: `${name} (demo)`, phone: "(15) 90000-0000", email, address, college });
+            await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [lat, lng, student.id]);
+            const booking = await repo.createBooking({ studentId: student.id, driverId: driver.id });
+            await repo.updateBooking(booking.id, { status: "Confirmado" });
+          } catch (error) {
+            // duas instâncias subindo juntas, ou a van lotou: segue com os próximos
+            if (!(error instanceof ApiError)) throw error;
+          }
+        }
+      }
     },
   };
 
