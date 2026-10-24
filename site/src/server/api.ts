@@ -126,6 +126,7 @@ export function createApp(
     if (String(data.email ?? "").toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`)) throw new ApiError(400, "Use um e-mail real para criar a conta.");
     const passwordHash = await hashPassword(validatePassword(data.password));
     const student = await repo.createStudent({ ...data, passwordHash });
+    await repo.locateStudent(student.id);
     await startSession(req, res, { profile: "student", id: student.id });
     return student;
   }));
@@ -160,7 +161,11 @@ export function createApp(
   }));
 
   // Presença do dia: o estudante logado vê e diz se vai hoje
-  app.get("/api/attendance/today", route((_req, res) => repo.studentToday(requireUser(res, "student").id)));
+  app.get("/api/attendance/today", route(async (_req, res) => {
+    const { id } = requireUser(res, "student");
+    await repo.locateStudent(id);
+    return repo.studentToday(id);
+  }));
   app.put("/api/attendance/today", route((req, res) => repo.setAttendance(requireUser(res, "student").id, body(req).going)));
 
   // Avisos do sino do painel (estudante ou motorista logado)

@@ -9,6 +9,7 @@ import { ApiError } from "./errors.ts";
 import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 import { schema } from "./schema.ts";
 import { demoStudents } from "./demo.ts";
+import { geocode } from "./geocode.ts";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
@@ -129,7 +130,15 @@ export const legs: Leg[] = ["ida", "volta"];
 
 // Uma perna da viagem de hoje: horário programado, quando o motorista saiu e a previsão no ponto do estudante
 // `eta` = previsão no ponto do estudante; `predicted` = calculada a partir do horário programado (a van ainda não saiu)
-export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null; predicted: boolean };
+export type TodayLeg = {
+  leg: Leg;
+  scheduled: string | null;
+  startedAt: string | null;
+  eta: string | null;
+  predicted: boolean;
+  // minutos que o estudante passa na van nesta viagem (da hora que embarca até a faculdade, ou da faculdade até em casa)
+  rideMinutes?: number | null;
+};
 
 // Rota calculada pelos endereços: ordem das paradas, tempo e distância
 export type RouteStopInfo = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
@@ -404,8 +413,12 @@ function createRepository(db: Client) {
     for (const rider of riders) counts.set(rider.college, (counts.get(rider.college) ?? 0) + 1);
     const destination = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? driver.colleges[0] ?? null;
     const college: Point | null = destination ? collegePoint(destination) : null;
-    const start: Point | null = placePoint(driver.cities[0] ?? "");
-    const stops = riders.map((rider) => ({ id: rider.studentId, point: rider.point }));
+    const cityPoints = driver.cities.map((city) => placePoint(city)).filter((point): point is Point => point !== null);
+    const start: Point | null = cityPoints[0] ?? null;
+    // endereço que não conseguimos localizar: assume um ponto no meio da área que a van atende
+    const area: Point | null = cityPoints.length === 0 ? null
+      : { lat: cityPoints.reduce((t, p) => t + p.lat, 0) / cityPoints.length, lng: cityPoints.reduce((t, p) => t + p.lng, 0) / cityPoints.length };
+    const stops = riders.map((rider) => ({ id: rider.studentId, point: rider.point ?? area }));
     const plan = leg === "ida" ? planRoute(start, stops, college) : planRoute(college, stops);
     return { plan, destination };
   }
@@ -416,6 +429,8 @@ function createRepository(db: Client) {
     if (started) return { time: localTime(addMinutes(started, minutes)), predicted: false };
     return scheduled ? { time: clockPlus(scheduled, minutes), predicted: true } : null;
   }
+
+  const triedLocating = new Set<number>();
 
   const repo = {
     listColleges(): Promise<College[]> {
@@ -606,6 +621,16 @@ function createRepository(db: Client) {
       return { driver, passengers, mainDestination, today };
     },
 
+    // Descobre a posição do endereço do estudante (uma tentativa por execução do servidor; falhou, usa a aproximação)
+    async locateStudent(studentId: number, locate: (address: string) => Promise<Point | null> = geocode): Promise<void> {
+      if (triedLocating.has(studentId)) return;
+      const row = await get<{ lat: number | null; email: string; address: string }>("SELECT lat, email, address FROM students WHERE id = ?", [studentId]);
+      if (!row || row.lat !== null || row.email.toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`)) return;
+      triedLocating.add(studentId);
+      const point = await locate(row.address);
+      if (point) await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [point.lat, point.lng, studentId]);
+    },
+
     // Painel do estudante: a van dele, se vai hoje e os horários de ida e volta
     async studentToday(studentId: number, now = new Date()): Promise<StudentToday> {
       const day = localDay(now);
@@ -635,9 +660,11 @@ function createRepository(db: Client) {
         legs: legs.map((leg) => {
           const started = runs[leg];
           const scheduled = scheduledTime(driver, leg);
-          const minutes = going === true ? planLeg(driver, leg, riders)?.plan.stops.find((stop) => stop.id === studentId)?.minutes : undefined;
+          const planned = going === true ? planLeg(driver, leg, riders) : null;
+          const minutes = planned?.plan.stops.find((stop) => stop.id === studentId)?.minutes;
           const at = minutes === undefined ? null : clockAt(started, scheduled, minutes);
-          return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: at?.time ?? null, predicted: at?.predicted ?? false };
+          const ride = minutes === undefined ? null : leg === "ida" ? planned!.plan.totalMinutes - minutes : minutes;
+          return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: at?.time ?? null, predicted: at?.predicted ?? false, rideMinutes: ride };
         }),
       };
     },
