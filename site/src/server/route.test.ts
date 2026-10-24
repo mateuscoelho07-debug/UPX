@@ -99,3 +99,14 @@ test("horário mais minutos, inclusive passando da meia-noite", () => {
   assert.equal(clockPlus("23:50", 20), "00:10");
   assert.equal(clockPlus("06:30", 0), "06:30");
 });
+
+test("geocode: usa o resultado dentro da região e ignora o resto", async () => {
+  const { geocode } = await import("./geocode.ts");
+  const answer = (body: unknown, ok = true) => async () => ({ ok, json: async () => body });
+  assert.deepEqual(await geocode("Rua A, 10 - Sorocaba", answer([{ lat: "-23.49", lon: "-47.43" }])), { lat: -23.49, lng: -47.43 });
+  assert.equal(await geocode("Rua A, 10 - Curitiba", answer([{ lat: "-25.43", lon: "-49.27" }])), null); // fora da região
+  assert.equal(await geocode("Rua sem resultado, 1", answer([])), null);
+  assert.equal(await geocode("Rua A, 10 - Sorocaba", answer([], false)), null);
+  assert.equal(await geocode("Rua A, 10 - Sorocaba", async () => { throw new Error("sem rede"); }), null);
+  assert.equal(await geocode("abc", answer([{ lat: "-23.49", lon: "-47.43" }])), null); // endereço curto demais
+});
