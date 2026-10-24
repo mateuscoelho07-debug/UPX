@@ -1,4 +1,5 @@
 // Testes da API: `pnpm test:api`
+process.env.GEOCODE = "false"; // os testes não chamam o serviço de mapas
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
@@ -354,14 +355,14 @@ test("presença do dia: estudante avisa se vai e motorista e estudante são noti
   assert.ok((await motorista.call("GET", "/notifications")).body.items.some((n: { title: string }) => n.title === "Ana não vai hoje"));
 });
 
-test("previsão de chegada segue a ordem da rota de quem vai hoje", async () => {
+test("previsão de chegada segue a rota de quem vai hoje e pula quem não vai", async () => {
   const repo = await openDatabase(":memory:");
-  const driver = await repo.createDriver({ name: "Rota", phone: "1", email: "rota@teste.com", vanModel: "Van", plate: "ROT-9Z99", departureTime: "06:30", returnTime: "22:40", cities: "Sorocaba", colleges: "Fatec" });
+  const driver = await repo.createDriver({ name: "Rota", phone: "1", email: "rota@teste.com", vanModel: "Van", plate: "ROT-9Z99", departureTime: "06:30", returnTime: "22:40", cities: "Sorocaba (Centro)", colleges: "Fatec" });
   const ids: number[] = [];
-  for (const [index, name] of ["Primeira", "Segunda", "Terceira"].entries()) {
-    const student = await repo.createStudent({ name, phone: "1", email: `${name}@teste.com`, address: `Rua ${name}`, college: "Fatec" });
+  for (const [name, bairro] of [["Primeira", "Vila Hortência"], ["Segunda", "Éden"], ["Terceira", "Itavuvu"]] as const) {
+    const student = await repo.createStudent({ name, phone: "1", email: `${name}@teste.com`, address: `Rua ${name}, 10 - ${bairro}`, college: "Fatec" });
     const booking = await repo.createBooking({ studentId: student.id, driverId: driver.id });
-    await repo.updateBooking(booking.id, { status: "Confirmado", pickupTime: `06:4${index}` });
+    await repo.updateBooking(booking.id, { status: "Confirmado" });
     ids.push(student.id);
   }
   const now = new Date("2026-10-23T09:30:00Z"); // 06:30 em Brasília, sexta-feira
@@ -371,15 +372,42 @@ test("previsão de chegada segue a ordem da rota de quem vai hoje", async () => 
   const today = await repo.startRoute(driver.id, "ida", now);
   assert.equal(today.weekday, "Sexta-feira");
   assert.deepEqual([today.going, today.notGoing, today.pending], [2, 1, 0]);
-  // endereços que não conseguimos localizar: 6 min até o primeiro ponto, 2 min parado e mais 6 até o seguinte
-  assert.equal((await repo.studentToday(ids[0]!, now)).legs[0]!.eta, "06:36");
-  assert.equal((await repo.studentToday(ids[2]!, now)).legs[0]!.eta, "06:44");
+  const primeira = (await repo.studentToday(ids[0]!, now)).legs[0]!;
+  const terceira = (await repo.studentToday(ids[2]!, now)).legs[0]!;
+  assert.equal(primeira.predicted, false);
+  assert.ok(primeira.eta! >= "06:30" && terceira.eta! > primeira.eta!, `${primeira.eta} ${terceira.eta}`);
+  assert.ok(primeira.rideMinutes! > terceira.rideMinutes!); // quem embarca primeiro passa mais tempo na van
   assert.equal((await repo.studentToday(ids[1]!, now)).legs[0]!.eta, null);
 
   const later = new Date("2026-10-24T01:40:00Z"); // 22:40 do mesmo dia em Brasília
   await repo.startRoute(driver.id, "volta", later);
-  assert.equal((await repo.studentToday(ids[0]!, later)).legs[1]!.eta, "22:46");
-  assert.equal((await repo.studentToday(ids[2]!, later)).legs[1]!.eta, "22:54");
+  const voltaPrimeira = (await repo.studentToday(ids[0]!, later)).legs[1]!;
+  const voltaTerceira = (await repo.studentToday(ids[2]!, later)).legs[1]!;
+  assert.ok(voltaPrimeira.eta! > "22:40" && voltaTerceira.eta! > "22:40");
+  assert.ok(voltaPrimeira.eta !== voltaTerceira.eta);
+});
+
+test("endereço que não dá para localizar usa o meio da área da van, não zero minutos", async () => {
+  const repo = await openDatabase(":memory:");
+  const driver = await repo.createDriver({ name: "Rota", phone: "1", email: "rota2@teste.com", vanModel: "Van", plate: "ROT-8Y88", departureTime: "17:00", returnTime: "22:40", cities: "Itu, Salto", colleges: "UniFacens" });
+  const student = await repo.createStudent({ name: "Sem Rua", phone: "1", email: "semrua@teste.com", address: "Rua que não achamos, 5", college: "UniFacens" });
+  const booking = await repo.createBooking({ studentId: student.id, driverId: driver.id });
+  await repo.updateBooking(booking.id, { status: "Confirmado" });
+  const now = new Date("2026-10-23T19:00:00Z");
+  await repo.setAttendance(student.id, true, now);
+  const volta = (await repo.studentToday(student.id, now)).legs[1]!;
+  // da UniFacens (Sorocaba) até a área de Itu/Salto são mais de 30 minutos
+  assert.ok(volta.rideMinutes! > 30, `${volta.rideMinutes}`);
+});
+
+test("locateStudent guarda a posição encontrada e só tenta uma vez", async () => {
+  const repo = await openDatabase(":memory:");
+  const student = await repo.createStudent({ name: "Geo", phone: "1", email: "geo@teste.com", address: "Av. Exemplo, 100 - Sorocaba", college: "UniFacens" });
+  let calls = 0;
+  const found = async () => { calls++; return { lat: -23.49, lng: -47.43 }; };
+  await repo.locateStudent(student.id, found);
+  await repo.locateStudent(student.id, found);
+  assert.equal(calls, 1);
 });
 
 test("cada estudante escolhe uma van só: trocar, cancelar e ver os detalhes", async () => {
