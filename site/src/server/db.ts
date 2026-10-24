@@ -12,6 +12,7 @@ import { demoStudents } from "./demo.ts";
 import { geocode } from "./geocode.ts";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
+import { isSubscriptionActive, renewedUntil, subscriptionConfig, subscriptionInfo, type SubscriptionInfo } from "./subscription.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
 
 export { ApiError };
@@ -46,6 +47,9 @@ export type Driver = {
   freeSeats: number;
   cities: string[];
   colleges: string[];
+  subscriptionUntil: string | null;
+  // assinatura em dia (ou motorista de demonstração): só assim a van aparece para os alunos
+  subscriptionActive: boolean;
 };
 
 export type Van = {
@@ -123,7 +127,7 @@ export type DriverInput = {
   passwordHash?: string;
 };
 
-type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats"> & { cities: string | null; colleges: string | null };
+type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats" | "subscriptionActive"> & { cities: string | null; colleges: string | null };
 
 export type Leg = "ida" | "volta";
 export const legs: Leg[] = ["ida", "volta"];
@@ -200,6 +204,7 @@ async function migrate(db: Client) {
   const columns: [string, string, string][] = [
     ["students", "password_hash", "TEXT"], ["drivers", "password_hash", "TEXT"], ["drivers", "return_time", "TEXT"],
     ["students", "lat", "REAL"], ["students", "lng", "REAL"],
+    ["drivers", "subscription_until", "TEXT"], ["drivers", "subscription_notice", "TEXT"],
   ];
   for (const [table, column, type] of columns) {
     const { rows } = await db.execute(`PRAGMA table_info(${table})`);
@@ -260,6 +265,11 @@ const demoVans: DemoVan[] = [
   { key: "saoroque", name: "Gustavo Pires", vanModel: "Peugeot Boxer", capacity: 14, departureTime: "16:50", rating: 4.6, cities: ["São Roque", "Mairinque", "Alumínio"] },
 ];
 
+// Contas de demonstração (vans e alunos) usam este domínio
+function isDemoEmail(email: string): boolean {
+  return email.toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`);
+}
+
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Conexão normal ou uma transação aberta: as duas executam SQL do mesmo jeito
@@ -319,7 +329,7 @@ function createRepository(db: Client) {
 
   const driverSummarySql = `
     SELECT d.id, d.name, d.phone, d.email, d.van_model AS vanModel, d.plate, d.capacity,
-           d.departure_time AS departureTime, d.return_time AS returnTime, d.rating,
+           d.departure_time AS departureTime, d.return_time AS returnTime, d.rating, d.subscription_until AS subscriptionUntil,
            (SELECT COUNT(*) FROM bookings b WHERE b.driver_id = d.id AND b.status <> 'Cancelado') AS occupied,
            (SELECT group_concat(city, ',') FROM (SELECT city FROM driver_cities WHERE driver_id = d.id ORDER BY position)) AS cities,
            (SELECT group_concat(c.name, ',') FROM driver_colleges dc JOIN colleges c ON c.id = dc.college_id WHERE dc.driver_id = d.id) AS colleges
@@ -331,6 +341,7 @@ function createRepository(db: Client) {
       cities: row.cities ? row.cities.split(",") : [],
       colleges: row.colleges ? row.colleges.split(",") : [],
       freeSeats: Math.max(row.capacity - row.occupied, 0),
+      subscriptionActive: isSubscriptionActive(row.subscriptionUntil, localDay(new Date()), isDemoEmail(row.email)),
     };
   }
 
@@ -352,7 +363,7 @@ function createRepository(db: Client) {
     const rows = await all<DriverRow>(`${driverSummarySql}
       WHERE d.id IN (SELECT driver_id FROM driver_colleges WHERE college_id = ?)
       ORDER BY d.rating DESC, d.departure_time`, [collegeId]);
-    return rows.map(toDriver);
+    return rows.map(toDriver).filter((driver) => driver.subscriptionActive);
   }
 
   async function getBooking(id: number): Promise<Booking> {
@@ -519,7 +530,7 @@ function createRepository(db: Client) {
       }
       const drivers = target
         ? await driversForCollege(target.id)
-        : (await all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`)).map(toDriver);
+        : (await all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`)).map(toDriver).filter((driver) => driver.subscriptionActive);
       return drivers.map((driver) => ({
         id: driver.id,
         driver: driver.name,
@@ -545,6 +556,8 @@ function createRepository(db: Client) {
         SELECT b.id, b.driver_id AS driverId, b.status, d.name AS driver FROM bookings b JOIN drivers d ON d.id = b.driver_id
         WHERE b.student_id = ? AND b.status <> 'Cancelado' ORDER BY b.id DESC`, [studentId]);
       const mine = active.find((booking) => booking.driverId === driverId);
+      // van com a assinatura vencida some para quem ainda não reservou
+      if (!driver.subscriptionActive && !mine) throw new ApiError(404, "Esta van não está disponível no momento.");
       const other = active.find((booking) => booking.driverId !== driverId);
       return {
         id: driver.id,
@@ -582,8 +595,62 @@ function createRepository(db: Client) {
       });
     },
 
+    // Situação da assinatura do motorista (validade, valor e se a van está liberada para os alunos)
+    async subscription(driverId: number, now = new Date()): Promise<SubscriptionInfo> {
+      const driver = await getDriver(driverId);
+      return subscriptionInfo(driver.subscriptionUntil, localDay(now), isDemoEmail(driver.email));
+    },
+
+    // Pagamento SIMULADO: renova a assinatura sem cobrar. A integração real (Stripe, Mercado Pago...)
+    // entra no lugar deste método, confirmando o pagamento antes de chamar a mesma renovação.
+    async subscribe(driverId: number, now = new Date()): Promise<SubscriptionInfo> {
+      const config = subscriptionConfig();
+      if (!config.enabled) throw new ApiError(409, "A assinatura não está sendo cobrada.");
+      if (!config.simulated) throw new ApiError(501, "O pagamento online ainda não está disponível.");
+      const driver = await getDriver(driverId);
+      if (isDemoEmail(driver.email)) throw new ApiError(409, "Contas de demonstração não precisam de assinatura.");
+      const until = renewedUntil(driver.subscriptionUntil, localDay(now), config.days);
+      await run("UPDATE drivers SET subscription_until = ?, subscription_notice = NULL WHERE id = ?", [until, driverId]);
+      await notify({ profile: "driver", id: driverId }, "Assinatura ativa",
+        `Pagamento simulado confirmado. Sua van está liberada para os alunos até ${until.split("-").reverse().join("/")}.`);
+      return repo.subscription(driverId, now);
+    },
+
+    // Avisa o motorista perto do vencimento e quando venceu (uma vez por validade)
+    async checkSubscriptionNotices(driverId: number, now = new Date()): Promise<void> {
+      const config = subscriptionConfig();
+      const row = await get<{ email: string; until: string | null; notice: string | null }>(
+        "SELECT email, subscription_until AS until, subscription_notice AS notice FROM drivers WHERE id = ?", [driverId]);
+      if (!config.enabled || !row || isDemoEmail(row.email)) return;
+      const info = subscriptionInfo(row.until, localDay(now), false, config);
+      const price = `R$ ${config.price.toFixed(2).replace(".", ",")}`;
+      let notice: string | null = null;
+      if (row.until === null) {
+        notice = "none";
+        if (row.notice !== notice) {
+          await notify({ profile: "driver", id: driverId }, "Assine para liberar sua van",
+            `Sua conta está criada, mas sua van só aparece para os alunos com a assinatura em dia (${price} por mês). Assine no painel.`);
+        }
+      } else if (!info.active) {
+        notice = `${row.until}:expired`;
+        if (row.notice !== notice) {
+          await notify({ profile: "driver", id: driverId }, "Assinatura vencida",
+            `Sua assinatura venceu em ${row.until.split("-").reverse().join("/")} e sua van ficou oculta para novos alunos. Renove no painel.`);
+        }
+      } else if (info.daysLeft !== null && info.daysLeft <= config.warnDays) {
+        notice = `${row.until}:soon`;
+        if (row.notice !== notice) {
+          await notify({ profile: "driver", id: driverId }, "Assinatura perto de vencer",
+            info.daysLeft === 0 ? "Sua assinatura vence hoje. Renove no painel para não perder novos alunos."
+              : `Sua assinatura vence em ${info.daysLeft} ${info.daysLeft === 1 ? "dia" : "dias"}. Renove no painel para não perder novos alunos.`);
+        }
+      }
+      if (notice !== null && notice !== row.notice) await run("UPDATE drivers SET subscription_notice = ? WHERE id = ?", [notice, driverId]);
+    },
+
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
-    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday }> {
+    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo }> {
+      await repo.checkSubscriptionNotices(driverId, now);
       const driver = await getDriver(driverId);
       const day = localDay(now);
       const riders = await passengersOf(driverId, day);
@@ -618,7 +685,7 @@ function createRepository(db: Client) {
           return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: null, predicted, route };
         }),
       };
-      return { driver, passengers, mainDestination, today };
+      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)) };
     },
 
     // Descobre a posição do endereço do estudante (uma tentativa por execução do servidor; falhou, usa a aproximação)
@@ -715,6 +782,7 @@ function createRepository(db: Client) {
 
     // Últimos avisos do usuário logado
     async notifications(user: SessionUser): Promise<{ unread: number; items: Notification[] }> {
+      if (user.profile === "driver") await repo.checkSubscriptionNotices(user.id);
       const rows = await all<{ id: number; title: string; body: string; createdAt: string; readAt: string | null }>(`
         SELECT id, title, body, created_at AS createdAt, read_at AS readAt FROM notifications
         WHERE profile = ? AND user_id = ? ORDER BY id DESC LIMIT 30`, [user.profile, user.id]);
@@ -742,6 +810,7 @@ function createRepository(db: Client) {
         const existing = await get<{ id: number; status: BookingStatus }>(
           "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?", [student.id, driver.id], tx);
         if (existing && existing.status !== "Cancelado") throw new ApiError(409, "Você já reservou uma vaga nesta van.");
+        if (!driver.subscriptionActive) throw new ApiError(409, "Esta van não está recebendo novas reservas no momento.");
         if (driver.freeSeats <= 0) throw new ApiError(409, "Esta van não tem vagas livres.");
         const others = await all<{ id: number; driverId: number }>(
           "SELECT id, driver_id AS driverId FROM bookings WHERE student_id = ? AND driver_id <> ? AND status <> 'Cancelado'", [student.id, driver.id], tx);
@@ -1015,6 +1084,8 @@ function createRepository(db: Client) {
     const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", returnTime: "22:40", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
     await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", returnTime: "22:50", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
     await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", returnTime: "23:00", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
+    // motoristas de exemplo com a assinatura sempre em dia
+    await run("UPDATE drivers SET subscription_until = '2099-12-31'");
     const passengers: [string, string, string, string, string, BookingStatus][] = [
       ["Mariana Costa", "mariana@email.com", "Jd. Europa", "UniFacens", "17:40", "Confirmado"],
       ["Lucas Ribeiro", "lucas@email.com", "Vila Hortência", "Fatec", "17:55", "Confirmado"],

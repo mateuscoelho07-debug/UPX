@@ -153,6 +153,17 @@ export function createApp(
     requireUser(res, "driver", driverId);
     return repo.driverDashboard(driverId);
   }));
+  // Assinatura mensal do motorista (pagamento ainda simulado)
+  app.get("/api/drivers/:id/subscription", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.subscription(driverId);
+  }));
+  app.post("/api/drivers/:id/subscription", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.subscribe(driverId);
+  }, 200));
   // Motorista inicia a ida ou a volta do dia (avisa quem vai hoje)
   app.post("/api/drivers/:id/route-runs", route((req, res) => {
     const driverId = id(req.params.id);
