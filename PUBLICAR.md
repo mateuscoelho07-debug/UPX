@@ -89,6 +89,7 @@ Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de dem
 - **Ninguém consegue entrar nessas contas:** elas não têm senha, então o login sempre falha.
 - Um estudante pode reservar vaga numa van de demonstração, mas ninguém vai confirmar a reserva.
 - Cada van de demonstração já vem com **5 alunos fictícios** ("(demo)" no nome, 55 no total), com endereços que parecem reais (ruas, bairros e cidades da região) mas casas inventadas. Eles também não têm senha e são apagados junto com as vans por `DEMO_VANS=false`.
+- **Alunos coringa:** o motorista **"Mateus Coelho"** (conta real) ganha **3 alunos coringa** ("(coringa)" no nome, com endereços de Sorocaba) que sempre contam como "Vou hoje", para testar a rota e a previsão. Eles entram sozinhos quando o motorista abre o painel (ou na próxima partida do site), respeitam as vagas livres e não têm senha. Para outro motorista, crie `CORINGA_DRIVERS` na Vercel com os nomes ou e-mails separados por vírgula (`off` desliga). `DEMO_VANS=false` apaga só os coringas; a van continua.
 - Os alunos de demonstração contam como **"Vou hoje"** todos os dias, para o painel do motorista e a previsão sempre terem o que mostrar.
 
 ## Como o tempo de busca é calculado
