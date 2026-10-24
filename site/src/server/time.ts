@@ -29,3 +29,10 @@ export function fromSqlTime(value: string): Date {
 export function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60_000);
 }
+
+// "17:40" + 25 minutos = "18:05" (passa da meia-noite sem problemas)
+export function clockPlus(clock: string, minutes: number): string {
+  const [hours, mins] = clock.split(":").map(Number);
+  const total = (((hours! * 60 + mins! + Math.round(minutes)) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}

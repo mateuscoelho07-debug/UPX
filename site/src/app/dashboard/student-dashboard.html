@@ -27,7 +27,7 @@
               </div>
               <p class="mt-4 text-slate-700">Motorista: {{ van.driver }} · embarque em {{ van.pickup }}{{ van.pickupTime ? " às " + van.pickupTime : "" }}</p>
               <p class="mt-1 text-xs text-slate-500">
-                Estimativa baseada na rota de todos os alunos da van que vão hoje ({{ van.goingCount }} {{ van.goingCount === 1 ? "aluno" : "alunos" }}).
+                Previsão calculada pela distância entre os endereços de todos os alunos da van que vão hoje ({{ van.goingCount }} {{ van.goingCount === 1 ? "aluno" : "alunos" }}).
               </p>
             } @else {
               <p class="mt-4 text-sm text-slate-600">Assim que você reservar uma vaga, os horários de ida e volta da sua van aparecem aqui.</p>

@@ -13,8 +13,8 @@ const day = {
   going: null,
   van: { driverId: 1, driver: "Carlos", phone: "1", vehicle: "Van", pickup: "Centro", pickupTime: "06:40", status: "Confirmado", goingCount: 1 },
   legs: [
-    { leg: "ida", scheduled: "06:30", startedAt: null, eta: null },
-    { leg: "volta", scheduled: "22:40", startedAt: null, eta: null },
+    { leg: "ida", scheduled: "06:30", startedAt: null, eta: null, predicted: false },
+    { leg: "volta", scheduled: "22:40", startedAt: null, eta: null, predicted: false },
   ],
 };
 
