@@ -16,6 +16,8 @@
     <app-status-message [loading]="loading() && !data()" [error]="error()" (retry)="load()" />
 
     @if (data(); as d) {
+      <app-subscription-card [driverId]="driverId()" [subscription]="d.subscription" (changed)="load()" (unauthorized)="logout.emit()" />
+
       <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Vão hoje</span><strong class="mt-2 block text-3xl font-extrabold text-emerald-600">{{ d.today.going }}</strong></article>
         <article class="rounded-2xl border border-slate-200 bg-white p-5"><span class="text-sm font-semibold text-slate-500">Não vão hoje</span><strong class="mt-2 block text-3xl font-extrabold text-slate-950">{{ d.today.notGoing }}</strong></article>

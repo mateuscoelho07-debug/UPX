@@ -33,6 +33,19 @@ export type Driver = {
   freeSeats: number;
   cities: string[];
   colleges: string[];
+  subscriptionUntil: string | null;
+  subscriptionActive: boolean;
+};
+
+// Assinatura mensal do motorista (o pagamento ainda é simulado)
+export type Subscription = {
+  enabled: boolean;
+  price: number;
+  days: number;
+  simulated: boolean;
+  until: string | null; // AAAA-MM-DD
+  active: boolean;
+  daysLeft: number | null;
 };
 
 export type Van = {
@@ -115,7 +128,7 @@ export type StudentToday = {
   legs: TodayLeg[];
 };
 
-export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday };
+export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription };
 
 export type Session = { profile: "student" | "driver" | "admin"; id: number; name: string };
 
@@ -192,6 +205,7 @@ export class ApiService {
   student = (id: number) => this.request<Student>("GET", `/students/${id}`);
   createDriver = (data: DriverSignup) => this.request<Driver>("POST", "/drivers", data);
   driverDashboard = (id: number) => this.request<DriverDashboardData>("GET", `/drivers/${id}/dashboard`);
+  subscribe = (id: number) => this.request<Subscription>("POST", `/drivers/${id}/subscription`);
   startRoute = (id: number, leg: Leg) => this.request<DriverToday>("POST", `/drivers/${id}/route-runs`, { leg });
   vans = () => this.request<Van[]>("GET", "/vans");
   vanDetail = (id: number) => this.request<VanDetail>("GET", `/vans/${id}`);
