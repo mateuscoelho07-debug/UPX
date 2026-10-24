@@ -69,6 +69,11 @@ const index = places
   // nomes maiores primeiro, para "Vila Hortência" ganhar de "Centro"/"Sorocaba"
   .sort((a, b) => b.alias.length - a.alias.length);
 
+// Texto para o Google Maps achar o campus (o mapa conhece a faculdade melhor que nossa coordenada aproximada)
+export function collegeSearch(name: string): string {
+  return `${name} ${normalize(name) === "ceunsp" ? "Salto SP" : "Sorocaba SP"}`;
+}
+
 export function collegePoint(name: string): Point | null {
   return colleges[normalize(name).replace(/ /g, "-")] ?? colleges[normalize(name)] ?? null;
 }

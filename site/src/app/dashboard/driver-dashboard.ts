@@ -67,12 +67,18 @@ export class DriverDashboard implements OnInit {
     }
   }
 
+  // Inicia a viagem e abre a rota no Google Maps (a aba é aberta já no clique, senão o navegador bloqueia)
   async start(leg: Leg) {
     this.actionError.set(null);
+    const tab = typeof window === "undefined" ? null : window.open("", "_blank");
     try {
-      await this.api.startRoute(this.driverId(), leg);
+      const today = await this.api.startRoute(this.driverId(), leg);
+      const url = today.legs.find((l) => l.leg === leg)?.route?.mapsLinks[0]?.url;
+      if (url && tab) tab.location.href = url;
+      else tab?.close();
       this.refresh();
     } catch (err) {
+      tab?.close();
       this.handleError(err as Error, this.actionError);
     }
   }

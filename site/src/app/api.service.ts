@@ -100,7 +100,16 @@ export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string |
 
 // Rota calculada pelos endereços de quem vai hoje
 export type RouteStop = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
-export type LegRoute = { destination: string | null; totalMinutes: number; distanceKm: number; arrival: string | null; stops: RouteStop[] };
+// Rota pronta no Google Maps (mais de um link quando passa de 9 paradas)
+export type MapsLink = { label: string; url: string };
+export type LegRoute = {
+  destination: string | null;
+  totalMinutes: number;
+  distanceKm: number;
+  arrival: string | null;
+  stops: RouteStop[];
+  mapsLinks: MapsLink[];
+};
 
 export type DriverToday = {
   day: string;

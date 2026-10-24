@@ -10,7 +10,8 @@ import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 import { schema } from "./schema.ts";
 import { demoStudents } from "./demo.ts";
 import { geocode } from "./geocode.ts";
-import { approximatePoint, collegePoint, placePoint } from "./places.ts";
+import { mapsLinks, type MapsLink } from "./maps.ts";
+import { approximatePoint, collegePoint, collegeSearch, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
 import { isSubscriptionActive, renewedUntil, subscriptionConfig, subscriptionInfo, type SubscriptionInfo } from "./subscription.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
@@ -99,7 +100,7 @@ export type Passenger = {
 };
 
 // Passageiro com a posição do endereço (uso interno: não vai para o navegador)
-type Rider = Passenger & { point: Point | null };
+type Rider = Passenger & { point: Point | null; mapsQuery: string };
 
 export type Booking = { id: number; status: BookingStatus; pickup: string; pickupTime: string | null };
 
@@ -146,7 +147,15 @@ export type TodayLeg = {
 
 // Rota calculada pelos endereços: ordem das paradas, tempo e distância
 export type RouteStopInfo = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
-export type LegRoute = { destination: string | null; totalMinutes: number; distanceKm: number; arrival: string | null; stops: RouteStopInfo[] };
+export type LegRoute = {
+  destination: string | null;
+  totalMinutes: number;
+  distanceKm: number;
+  arrival: string | null;
+  stops: RouteStopInfo[];
+  // rota pronta no Google Maps (vários links se passar de 9 paradas)
+  mapsLinks: MapsLink[];
+};
 
 export type StudentToday = {
   day: string;
@@ -402,6 +411,8 @@ function createRepository(db: Client) {
       ...row,
       going: going === null ? null : Boolean(going),
       point: lat !== null && lng !== null ? { lat, lng } : approximatePoint(row.pickup) ?? approximatePoint(home),
+      // para o Google Maps: a posição guardada, ou o endereço em texto
+      mapsQuery: lat !== null && lng !== null ? `${lat},${lng}` : row.pickup,
     }));
   }
 
@@ -654,7 +665,7 @@ function createRepository(db: Client) {
       const driver = await getDriver(driverId);
       const day = localDay(now);
       const riders = await passengersOf(driverId, day);
-      const passengers: Passenger[] = riders.map(({ point: _point, ...passenger }) => passenger);
+      const passengers: Passenger[] = riders.map(({ point: _point, mapsQuery: _query, ...passenger }) => passenger);
       const counts = new Map<string, number>();
       for (const passenger of passengers) counts.set(passenger.college, (counts.get(passenger.college) ?? 0) + 1);
       const mainDestination = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? driver.colleges[0] ?? "—";
@@ -680,7 +691,11 @@ function createRepository(db: Client) {
               return { studentId: rider.studentId, name: rider.name, pickup: rider.pickup, order: stop.order, eta: at?.time ?? null };
             });
             const end = clockAt(started, scheduled, planned.plan.totalMinutes);
-            route = { destination: planned.destination, totalMinutes: planned.plan.totalMinutes, distanceKm: planned.plan.distanceKm, arrival: end?.time ?? null, stops };
+            // ida: parte da posição do motorista, passa pelos alunos e termina na faculdade; volta: sai da faculdade
+            const college = planned.destination ? collegeSearch(planned.destination) : null;
+            const stopQueries = planned.plan.stops.map((stop) => names.get(stop.id)!.mapsQuery);
+            const links = mapsLinks(stopQueries, leg === "ida" ? { destination: college } : { origin: college });
+            route = { destination: planned.destination, totalMinutes: planned.plan.totalMinutes, distanceKm: planned.plan.distanceKm, arrival: end?.time ?? null, stops, mapsLinks: links };
           }
           return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: null, predicted, route };
         }),
