@@ -713,3 +713,46 @@ test("o painel do motorista traz a rota pronta no Google Maps, na ordem calculad
   // o navegador não recebe as coordenadas internas dos passageiros
   assert.ok(passengers.every((p) => !("point" in p) && !("mapsQuery" in p)));
 });
+
+test("alunos coringa: 3 na van do motorista escolhido, sempre indo, e saem com DEMO_VANS=false", async () => {
+  const repo = await openDatabase(":memory:");
+  const mateus = await repo.createDriver({ name: "Mateus Coelho", phone: "1", email: "mateus@teste.com", vanModel: "Van", plate: "MAT-1A11", capacity: 10, departureTime: "17:00", cities: "Sorocaba (Centro)", colleges: "UniFacens, Fatec" });
+  const outro = await repo.createDriver({ name: "Outro Motorista", phone: "1", email: "outro2@teste.com", vanModel: "Van", plate: "OUT-2B22", capacity: 10, departureTime: "17:00", cities: "Itu", colleges: "Fatec" });
+
+  // ao abrir o painel (ou na próxima partida do servidor) os coringas entram, uma vez só
+  await repo.driverDashboard(mateus.id);
+  await repo.syncDemoVans(true);
+  const now = new Date("2026-10-24T19:00:00Z");
+  const painel = await repo.driverDashboard(mateus.id, now);
+  assert.equal(painel.passengers.length, 3);
+  assert.ok(painel.passengers.every((p) => p.name.endsWith("(coringa)") && p.going === true && p.status === "Confirmado"));
+  assert.equal(painel.today.going, 3);
+  assert.equal(painel.today.legs[0]!.route!.stops.length, 3);
+  assert.equal((await repo.driverDashboard(outro.id, now)).passengers.length, 0); // só o motorista escolhido
+
+  // coringa não tem senha nem aparece como conta de verdade; a van real continua depois de DEMO_VANS=false
+  await repo.syncDemoVans(false);
+  process.env.DEMO_VANS = "false"; // como na Vercel: com a variável, eles não voltam
+  try {
+    assert.equal((await repo.getDriver(mateus.id)).name, "Mateus Coelho");
+    assert.equal((await repo.driverDashboard(mateus.id, now)).passengers.length, 0);
+  } finally {
+    delete process.env.DEMO_VANS;
+  }
+});
+
+test("alunos coringa respeitam as vagas e o CORINGA_DRIVERS", async () => {
+  const repo = await openDatabase(":memory:");
+  const pequena = await repo.createDriver({ name: "Mateus Coelho", phone: "1", email: "p@teste.com", vanModel: "Van", plate: "PEQ-3C33", capacity: 2, departureTime: "17:00", cities: "Itu", colleges: "Fatec" });
+  assert.equal((await repo.driverDashboard(pequena.id)).passengers.length, 2); // só cabem 2
+
+  process.env.CORINGA_DRIVERS = "outra@teste.com";
+  try {
+    const outra = await repo.createDriver({ name: "Outra Pessoa", phone: "1", email: "outra@teste.com", vanModel: "Van", plate: "OUT-4D44", capacity: 5, departureTime: "17:00", cities: "Itu", colleges: "Fatec" });
+    assert.equal((await repo.driverDashboard(outra.id)).passengers.length, 3); // por e-mail
+    const nova = await repo.createDriver({ name: "Mateus Coelho", phone: "1", email: "n@teste.com", vanModel: "Van", plate: "NOV-5E55", capacity: 5, departureTime: "17:00", cities: "Itu", colleges: "Fatec" });
+    assert.equal((await repo.driverDashboard(nova.id)).passengers.length, 0); // o nome padrão não vale mais
+  } finally {
+    delete process.env.CORINGA_DRIVERS;
+  }
+});

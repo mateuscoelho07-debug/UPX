@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { ApiError } from "./errors.ts";
 import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 import { schema } from "./schema.ts";
-import { demoStudents } from "./demo.ts";
+import { coringaStudents, demoStudents } from "./demo.ts";
 import { geocode } from "./geocode.ts";
 import { mapsLinks, type MapsLink } from "./maps.ts";
 import { approximatePoint, collegePoint, collegeSearch, placePoint } from "./places.ts";
@@ -277,6 +277,14 @@ const demoVans: DemoVan[] = [
 // Contas de demonstração (vans e alunos) usam este domínio
 function isDemoEmail(email: string): boolean {
   return email.toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`);
+}
+
+// Motoristas reais que ganham alunos coringa: nomes ou e-mails separados por vírgula em CORINGA_DRIVERS
+// (padrão: o dono do projeto; "off" desliga)
+function isCoringaDriver({ name, email }: { name: string; email: string }): boolean {
+  const plain = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const wanted = plain(process.env.CORINGA_DRIVERS ?? "Mateus Coelho").split(",").map((item) => item.trim()).filter((item) => item && item !== "off");
+  return wanted.includes(plain(name)) || wanted.includes(plain(email));
 }
 
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -662,6 +670,7 @@ function createRepository(db: Client) {
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
     async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo }> {
       await repo.checkSubscriptionNotices(driverId, now);
+      await repo.ensureCoringas(driverId); // motorista criado depois da última partida do servidor também ganha os coringas
       const driver = await getDriver(driverId);
       const day = localDay(now);
       const riders = await passengersOf(driverId, day);
@@ -1066,6 +1075,35 @@ function createRepository(db: Client) {
       // vans criadas antes do horário de volta existir
       await run("UPDATE drivers SET return_time = ? WHERE email LIKE ? AND return_time IS NULL", [DEMO_RETURN_TIME, demoEmail]);
       await repo.syncDemoStudents();
+      const real = await all<{ id: number; name: string; email: string }>("SELECT id, name, email FROM drivers WHERE email NOT LIKE ?", [demoEmail]);
+      for (const driver of real) if (isCoringaDriver(driver)) await repo.ensureCoringas(driver.id);
+    },
+
+    // 3 alunos "coringa" (sempre "Vou hoje") na van de um motorista real escolhido em CORINGA_DRIVERS.
+    // Idempotente; respeita as vagas livres; some com DEMO_VANS=false (só os alunos, a van fica).
+    async ensureCoringas(driverId: number): Promise<void> {
+      if (process.env.DEMO_VANS === "false") return;
+      const driver = await getDriver(driverId);
+      if (isDemoEmail(driver.email) || !isCoringaDriver(driver)) return;
+      const existing = new Set((await all<{ email: string }>(
+        "SELECT email FROM students WHERE email LIKE ?", [`coringa-${driverId}-%@${DEMO_VAN_DOMAIN}`])).map((row) => row.email));
+      let occupied = driver.occupied;
+      for (const [index, [name, address, lat, lng]] of coringaStudents.entries()) {
+        const email = `coringa-${driverId}-${index + 1}@${DEMO_VAN_DOMAIN}`;
+        if (existing.has(email)) continue;
+        if (occupied >= driver.capacity) break;
+        try {
+          const student = await repo.createStudent({
+            name: `${name} (coringa)`, phone: "(15) 90000-0000", email, address, college: driver.colleges[index % driver.colleges.length],
+          });
+          await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [lat, lng, student.id]);
+          // direto no banco: o aluno coringa entra mesmo se a assinatura do motorista estiver vencida
+          await run("INSERT INTO bookings (student_id, driver_id, pickup, status) VALUES (?, ?, ?, 'Confirmado')", [student.id, driverId, address]);
+          occupied++;
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+        }
+      }
     },
 
     // Alunos fictícios dentro das vans de demonstração, com endereço e posição fixos. Idempotente.
