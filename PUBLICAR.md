@@ -93,7 +93,7 @@ Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de dem
 
 O RotaU **não usa serviço de mapas** (nada para configurar, grátis e sem chave). O cálculo roda no próprio site:
 
-1. Cada endereço vira um ponto no mapa. Os alunos de demonstração têm coordenadas fixas. Para os endereços que as pessoas digitam, o site procura o **bairro ou a cidade** no texto (ex.: "Campolim", "Itu") e usa o ponto aproximado dele. Se não achar, esse aluno entra no fim da rota com um tempo padrão de 6 minutos.
+1. Cada endereço vira um ponto no mapa. Os alunos de demonstração têm coordenadas fixas. Para os alunos de verdade, o site pergunta ao **Nominatim** (OpenStreetMap, grátis e sem chave) a posição do endereço, no cadastro e quando o aluno abre o painel, e guarda o resultado. Se o serviço estiver fora do ar ou devolver um lugar fora da região, usa o bairro ou a cidade achados no texto (ex.: "Campolim", "Itu"). Se nem isso der, o aluno é colocado no meio da área que a van atende. Para desligar a consulta online, crie `GEOCODE=false`.
 2. A ordem das paradas é o caminho mais curto (vizinho mais próximo, melhorado pelo método 2-opt). Na ida a van sai da primeira cidade dela e termina na faculdade; na volta sai da faculdade e deixa cada aluno em casa.
 3. O tempo entre dois pontos vem da distância em linha reta, aumentada em 35% (as ruas não são retas): até 8 km a 30 km/h (cidade) e o que passar disso a 70 km/h (estrada). Cada parada soma 2 minutos.
 4. Só entra na conta quem confirmou **"Vou hoje"**. Antes de a van sair, a previsão usa o horário programado da van; depois que o motorista inicia a rota, usa a hora real da saída.

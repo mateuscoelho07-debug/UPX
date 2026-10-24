@@ -99,9 +99,10 @@ export class StudentDashboard implements OnInit {
     const scheduled = leg.scheduled ? `Saída programada às ${leg.scheduled}.` : "Horário de saída a combinar com o motorista.";
     if (!leg.startedAt) {
       if (leg.eta) {
+        const ride = leg.rideMinutes ? ` Tempo na van: cerca de ${leg.rideMinutes} min.` : "";
         return leg.leg === "ida"
-          ? `${scheduled} Previsão de busca no seu ponto: ${leg.eta} (calculada pelos endereços de quem vai hoje).`
-          : `${scheduled} Previsão de chegada em casa: ${leg.eta} (calculada pelos endereços de quem vai hoje).`;
+          ? `${scheduled} Previsão de busca no seu ponto: ${leg.eta}.${ride}`
+          : `${scheduled} Previsão de chegada em casa: ${leg.eta}.${ride}`;
       }
       return `${scheduled} Confirme que você vai para ver a previsão de chegada.`;
     }
