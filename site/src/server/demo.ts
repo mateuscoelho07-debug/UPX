@@ -84,3 +84,12 @@ export const demoStudents: Record<string, DemoStudent[]> = {
   ],
 
 };
+
+// Alunos "coringa": vão todo dia e ficam na van de motoristas reais escolhidos (ver CORINGA_DRIVERS em db.ts),
+// para testar a rota e a previsão sem depender de alunos de verdade. Também fictícios e sem senha.
+// [nome, endereço, latitude, longitude]
+export const coringaStudents: [name: string, address: string, lat: number, lng: number][] = [
+  ["Beatriz Souza", "Rua Barão de Piratininga, 214 - Centro (Sorocaba)", -23.5042, -47.4561],
+  ["Rafael Lima", "Av. Ipanema, 1380 - Jd. Europa", -23.5268, -47.4702],
+  ["Camila Torres", "Rua das Hortênsias, 95 - Campolim", -23.5384, -47.4925],
+];
