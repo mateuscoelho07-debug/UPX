@@ -54,6 +54,8 @@ Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 | `TRUST_PROXY` | `1` | Faz o login funcionar direito atrás do HTTPS da Vercel (cookie seguro e limite de tentativas por visitante). |
 | `SEED` | `false` | **Importante:** sem isso o banco ganha motoristas e estudantes de exemplo com senha conhecida (`rotau1234`). As faculdades da lista do cadastro são criadas sempre, com ou sem esta variável. |
 | `DEMO_VANS` | *(não crie por enquanto)* | Só quando houver motoristas reais: `false` apaga as vans fictícias de demonstração (veja "Vans de demonstração" abaixo). |
+| `SUBSCRIPTION_PRICE` | *(opcional)* ex.: `29,90` | Valor da assinatura mensal do motorista, em reais. Sem ela, vale R$ 29,90. |
+| `SUBSCRIPTION` | *(opcional)* `off` | `off` desliga a cobrança: todas as vans aparecem, como era antes. |
 
 Depois clique em **Deploy**. A primeira publicação leva uns 1 a 2 minutos.
 
@@ -129,3 +131,16 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 ## Desenvolvimento no seu computador
 
 Rode `pnpm dev` na pasta `site` (site e API sobem juntos em http://localhost:8443) e use um arquivo local (`data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.
+
+## Assinatura mensal do motorista
+
+O RotaU ganha dinheiro com uma **assinatura mensal só dos motoristas** (o aluno não paga nada).
+
+- O motorista cria a conta normalmente, mas a van **só aparece para os alunos** (na busca, na lista de vans e para reservar) enquanto a assinatura estiver em dia. Quem já reservou continua na lista dele.
+- No painel do motorista há o cartão **Assinatura do motorista**, com o valor, a validade e o botão **Assinar** / **Renovar**. Pagar antes do vencimento soma 30 dias ao que sobrou.
+- O motorista recebe avisos no **sino**: quando ainda não assinou, 3 dias antes de vencer e quando venceu (cada aviso uma vez só).
+- O valor simbólico é **R$ 29,90 a cada 30 dias**. Mude com `SUBSCRIPTION_PRICE` (reais) e `SUBSCRIPTION_DAYS` (dias) na Vercel.
+- As vans e os motoristas de **demonstração nunca vencem** e continuam visíveis.
+- **Atenção:** o pagamento ainda é **simulado**: o botão renova sem cobrar nada. Para cobrar de verdade falta ligar um serviço de pagamento (Stripe ou Mercado Pago) no lugar do botão simulado. Quando isso estiver pronto, defina `SUBSCRIPTION_PAYMENT` com outro valor que não seja `simulado` para desligar o botão simulado.
+- **Motoristas que já existiam** no banco ficam sem assinatura e somem das buscas até assinarem. Se não quiser isso agora, defina `SUBSCRIPTION=off`.
+- Nada para fazer no Turso: as colunas novas (`subscription_until` e `subscription_notice`) são criadas sozinhas na primeira visita.

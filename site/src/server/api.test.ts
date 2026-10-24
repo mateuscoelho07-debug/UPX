@@ -1,5 +1,6 @@
 // Testes da API: `pnpm test:api`
 process.env.GEOCODE = "false"; // os testes não chamam o serviço de mapas
+process.env.SUBSCRIPTION = "off"; // a cobrança só liga nos testes de assinatura
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
@@ -583,3 +584,114 @@ test("e-mail de demonstração não serve para criar conta de verdade", async ()
   const res = await call("POST", "/students", { ...newStudent, email: `fake@${DEMO_VAN_DOMAIN}` });
   assert.equal(res.status, 400);
 });
+
+// Liga a cobrança só dentro de um teste
+async function withSubscription<T>(fn: () => Promise<T>): Promise<T> {
+  process.env.SUBSCRIPTION = "on";
+  try {
+    return await fn();
+  } finally {
+    process.env.SUBSCRIPTION = "off";
+  }
+}
+
+test("assinatura: van sem assinatura em dia some da busca e não recebe reservas", () => withSubscription(async () => {
+  const repo = await openDatabase(":memory:");
+  const driver = await repo.createDriver({ name: "Novo", phone: "1", email: "novo@teste.com", vanModel: "Van", plate: "NOV-1A11", cities: "Itu", colleges: "Fatec" });
+  const student = await repo.createStudent({ name: "Aluno", phone: "1", email: "aluno@teste.com", address: "Rua A - Itu", college: "Fatec" });
+  const vansDe = async () => (await repo.listVans({ studentId: student.id })).map((v) => v.id);
+
+  // recém-criada: nunca assinou, então fica oculta (as vans de demonstração continuam visíveis)
+  assert.equal(driver.subscriptionActive, false);
+  assert.ok(!(await vansDe()).includes(driver.id));
+  // 11 vans de demonstração + 2 motoristas de exemplo (Carlos e Fernanda, com assinatura até 2099) atendem a Fatec
+  assert.equal((await vansDe()).length, 13);
+  assert.equal((await repo.searchRoutes({ address: "Itu", college: "Fatec" })).count, 13);
+  await assert.rejects(repo.createBooking({ studentId: student.id, driverId: driver.id }), /não está recebendo novas reservas/);
+  await assert.rejects(repo.vanDetail(driver.id, student.id), /não está disponível/);
+
+  // assinar libera a van
+  const now = new Date("2026-10-24T15:00:00Z");
+  const paga = await repo.subscribe(driver.id, now);
+  assert.deepEqual([paga.active, paga.until, paga.daysLeft, paga.price], [true, "2026-11-23", 30, 29.9]);
+  assert.ok((await vansDe()).includes(driver.id));
+  const reserva = await repo.createBooking({ studentId: student.id, driverId: driver.id });
+  assert.equal(reserva.status, "Aguardando");
+
+  // pagar de novo soma 30 dias ao que sobrou
+  assert.equal((await repo.subscribe(driver.id, now)).until, "2026-12-23");
+
+  // vencida: some para novos alunos, mas quem já reservou continua vendo a van
+  const vencida = await repo.createDriver({ name: "Vencida", phone: "1", email: "vencida@teste.com", vanModel: "Van", plate: "VEN-2B22", cities: "Itu", colleges: "Fatec" });
+  await repo.subscribe(vencida.id, new Date("2025-01-10T15:00:00Z"));
+  assert.equal((await repo.subscription(vencida.id, now)).active, false);
+  assert.equal((await repo.getDriver(vencida.id)).subscriptionActive, false);
+  assert.ok(!(await vansDe()).includes(vencida.id));
+  assert.equal((await repo.vanDetail(driver.id, student.id)).booked, true);
+}));
+
+test("assinatura: avisos no sino perto do vencimento, sem repetir", () => withSubscription(async () => {
+  const repo = await openDatabase(":memory:");
+  const driver = await repo.createDriver({ name: "Aviso", phone: "1", email: "aviso@teste.com", vanModel: "Van", plate: "AVI-3C33", cities: "Itu", colleges: "Fatec" });
+  const user = { profile: "driver" as const, id: driver.id };
+  const titulos = async () => (await repo.notifications(user)).items.map((n) => n.title);
+
+  await repo.driverDashboard(driver.id);
+  await repo.driverDashboard(driver.id); // abrir de novo não repete
+  assert.deepEqual(await titulos(), ["Assine para liberar sua van"]);
+
+  const day = (iso: string) => new Date(`${iso}T15:00:00Z`);
+  await repo.subscribe(driver.id, day("2026-10-01")); // vale até 2026-10-31
+  await repo.checkSubscriptionNotices(driver.id, day("2026-10-20")); // falta muito: sem aviso
+  assert.equal((await titulos()).filter((t) => t === "Assinatura perto de vencer").length, 0);
+  await repo.checkSubscriptionNotices(driver.id, day("2026-10-29"));
+  await repo.checkSubscriptionNotices(driver.id, day("2026-10-30"));
+  assert.equal((await titulos()).filter((t) => t === "Assinatura perto de vencer").length, 1);
+  await repo.checkSubscriptionNotices(driver.id, day("2026-11-02"));
+  await repo.checkSubscriptionNotices(driver.id, day("2026-11-03"));
+  const todos = await repo.notifications(user);
+  assert.equal(todos.items.filter((n) => n.title === "Assinatura vencida").length, 1);
+  assert.match(todos.items.find((n) => n.title === "Assinatura vencida")!.body, /31\/10\/2026/);
+
+  // renovar zera o controle: o próximo vencimento avisa de novo
+  await repo.subscribe(driver.id, day("2026-11-03"));
+  assert.equal((await repo.subscription(driver.id, day("2026-11-03"))).active, true);
+}));
+
+test("assinatura: rotas da API, simulação e variáveis de ambiente", () => withSubscription(async () => {
+  const motorista = browser();
+  const criado = await motorista.call("POST", "/drivers", { ...newDriver, email: "assina@teste.com", plate: "ASS-4D44" });
+  assert.equal(criado.status, 201);
+  assert.equal(criado.body.subscriptionActive, false);
+  const id = criado.body.id;
+
+  const antes = await motorista.call("GET", `/drivers/${id}/subscription`);
+  assert.deepEqual([antes.body.enabled, antes.body.active, antes.body.until, antes.body.simulated], [true, false, null, true]);
+  const painel = await motorista.call("GET", `/drivers/${id}/dashboard`);
+  assert.equal(painel.body.subscription.active, false);
+
+  assert.equal((await call("POST", `/drivers/${id}/subscription`)).status, 401);
+  const outro = browser();
+  await outro.call("POST", "/drivers", { ...newDriver, email: "outro@teste.com", plate: "OUT-5E55" });
+  assert.equal((await outro.call("POST", `/drivers/${id}/subscription`)).status, 403);
+
+  const pago = await motorista.call("POST", `/drivers/${id}/subscription`);
+  assert.equal(pago.status, 200);
+  assert.equal(pago.body.active, true);
+  assert.equal(pago.body.daysLeft, 30);
+
+  process.env.SUBSCRIPTION_PRICE = "49,90";
+  try {
+    assert.equal((await motorista.call("GET", `/drivers/${id}/subscription`)).body.price, 49.9);
+    process.env.SUBSCRIPTION_PAYMENT = "stripe";
+    assert.equal((await motorista.call("POST", `/drivers/${id}/subscription`)).status, 501);
+  } finally {
+    delete process.env.SUBSCRIPTION_PRICE;
+    delete process.env.SUBSCRIPTION_PAYMENT;
+  }
+
+  // com SUBSCRIPTION=off ninguém precisa assinar
+  process.env.SUBSCRIPTION = "off";
+  assert.equal((await motorista.call("GET", `/drivers/${id}/subscription`)).body.enabled, false);
+  assert.equal((await motorista.call("POST", `/drivers/${id}/subscription`)).status, 409);
+}));

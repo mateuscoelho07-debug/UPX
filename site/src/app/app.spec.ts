@@ -6,6 +6,7 @@ import { ApiRequestError, ApiService } from "./api.service";
 import { StudentDashboard } from "./dashboard/student-dashboard";
 import VanDetailPage from "./dashboard/van-detail-page";
 import { DeleteAccount } from "./dashboard/delete-account";
+import { SubscriptionCard } from "./dashboard/subscription-card";
 
 const day = {
   day: "2026-10-23",
@@ -158,5 +159,45 @@ describe("DeleteAccount", () => {
     http.expectOne("/api/account/delete").flush({ ok: true });
     await settle(fixture);
     expect(deleted).toBe(1);
+  });
+});
+
+describe("SubscriptionCard", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
+
+  const base = { enabled: true, price: 29.9, days: 30, simulated: true, until: null, active: false, daysLeft: null };
+
+  function open(subscription: object) {
+    const fixture = TestBed.createComponent(SubscriptionCard);
+    fixture.componentRef.setInput("driverId", 7);
+    fixture.componentRef.setInput("subscription", subscription);
+    fixture.detectChanges();
+    return { fixture, http: TestBed.inject(HttpTestingController), el: fixture.nativeElement as HTMLElement };
+  }
+
+  it("avisa que a van está oculta e deixa assinar (simulado)", async () => {
+    const { fixture, http, el } = open(base);
+    expect(el.textContent).toContain("Assine para liberar sua van");
+    expect(el.textContent).toContain("oculta para novos alunos");
+    expect(el.textContent).toContain("Pagamento simulado");
+    let changed = 0;
+    fixture.componentInstance.changed.subscribe(() => changed++);
+    const botao = el.querySelector("button")!;
+    expect(botao.textContent).toContain("R$");
+    botao.click();
+    const req = http.expectOne("/api/drivers/7/subscription");
+    expect(req.request.method).toBe("POST");
+    req.flush({ ...base, active: true, until: "2026-11-23", daysLeft: 30 });
+    await settle(fixture);
+    expect(changed).toBe(1);
+  });
+
+  it("mostra a validade e permite renovar; some quando a cobrança está desligada", () => {
+    const ativa = open({ ...base, active: true, until: "2026-11-23", daysLeft: 3 });
+    expect(ativa.el.textContent).toContain("em dia até 23/11/2026");
+    expect(ativa.el.textContent).toContain("Faltam 3 dias");
+    expect(ativa.el.querySelector("button")!.textContent).toContain("Renovar");
+    const desligada = open({ ...base, enabled: false, active: true });
+    expect(desligada.el.querySelector("section")).toBeNull();
   });
 });

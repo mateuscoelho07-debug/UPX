@@ -36,3 +36,8 @@ export function clockPlus(clock: string, minutes: number): string {
   const total = (((hours! * 60 + mins! + Math.round(minutes)) % 1440) + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
+
+// Soma dias a uma data AAAA-MM-DD
+export function addDays(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
