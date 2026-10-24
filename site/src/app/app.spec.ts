@@ -7,6 +7,7 @@ import { StudentDashboard } from "./dashboard/student-dashboard";
 import VanDetailPage from "./dashboard/van-detail-page";
 import { DeleteAccount } from "./dashboard/delete-account";
 import { SubscriptionCard } from "./dashboard/subscription-card";
+import { DriverDashboard } from "./dashboard/driver-dashboard";
 
 const day = {
   day: "2026-10-23",
@@ -199,5 +200,45 @@ describe("SubscriptionCard", () => {
     expect(ativa.el.querySelector("button")!.textContent).toContain("Renovar");
     const desligada = open({ ...base, enabled: false, active: true });
     expect(desligada.el.querySelector("section")).toBeNull();
+  });
+});
+
+describe("DriverDashboard", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+
+  const url = "https://www.google.com/maps/dir/?api=1&destination=Fatec+Sorocaba+SP&waypoints=-23.5%2C-47.4";
+  const route = { destination: "Fatec", totalMinutes: 20, distanceKm: 8, arrival: "18:10", mapsLinks: [{ label: "Abrir no Google Maps", url }],
+    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A", order: 1, eta: "17:50" }] };
+  const leg = (name: string) => ({ leg: name, scheduled: "17:30", startedAt: null, eta: null, predicted: true, route });
+  const dashboard = {
+    driver: { id: 5, name: "Carlos", freeSeats: 3, occupied: 1, capacity: 4, departureTime: "17:30", cities: ["Sorocaba"], colleges: ["Fatec"] },
+    passengers: [], mainDestination: "Fatec",
+    today: { day: "2026-10-24", weekday: "Sábado", going: 1, notGoing: 0, pending: 0, legs: [leg("ida"), leg("volta")] },
+    subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
+  };
+
+  it("mostra o botão do Google Maps e abre a rota ao iniciar a ida", async () => {
+    const tab = { location: { href: "" }, close: vi.fn() };
+    const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+    const fixture = TestBed.createComponent(DriverDashboard);
+    fixture.componentRef.setInput("driverId", 5);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne("/api/drivers/5/dashboard").flush(dashboard);
+    await settle(fixture);
+    const el: HTMLElement = fixture.nativeElement;
+    const botoes = [...el.querySelectorAll("a")].filter((a) => a.textContent?.includes("Abrir no Google Maps"));
+    expect(botoes.length).toBe(2);
+    expect(botoes[0]!.getAttribute("href")).toBe(url);
+
+    [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Iniciar ida"))!.click();
+    expect(open).toHaveBeenCalledWith("", "_blank");
+    http.expectOne("/api/drivers/5/route-runs").flush(dashboard.today);
+    await settle(fixture);
+    expect(tab.location.href).toBe(url);
+    http.match("/api/drivers/5/dashboard").forEach((req) => req.flush(dashboard));
+    http.match("/api/notifications").forEach((req) => req.flush({ unread: 0, items: [] }));
+    open.mockRestore();
+    fixture.destroy();
   });
 });

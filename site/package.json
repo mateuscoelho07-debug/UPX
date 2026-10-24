@@ -9,7 +9,7 @@
     "start": "ng build && node dist/rotau/server/server.mjs",
     "serve:ssr": "node dist/rotau/server/server.mjs",
     "test": "ng test --watch=false",
-    "test:api": "node --experimental-strip-types --no-warnings --test src/server/api.test.ts src/server/route.test.ts",
+    "test:api": "node --experimental-strip-types --no-warnings --test src/server/api.test.ts src/server/route.test.ts src/server/maps.test.ts",
     "typecheck": "ngc -p tsconfig.app.json && tsc -p tsconfig.spec.json"
   },
   "dependencies": {
