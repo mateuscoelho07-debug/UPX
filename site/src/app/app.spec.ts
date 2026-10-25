@@ -206,8 +206,7 @@ describe("SubscriptionCard", () => {
 describe("DriverDashboard", () => {
   beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
 
-  const url = "https://www.google.com/maps/dir/?api=1&destination=Fatec+Sorocaba+SP&waypoints=-23.5%2C-47.4";
-  const route = { destination: "Fatec", totalMinutes: 20, distanceKm: 8, arrival: "18:10", mapsLinks: [{ label: "Abrir no Google Maps", url }],
+  const route = { destination: "Fatec", totalMinutes: 20, distanceKm: 8, arrival: "18:10",
     stops: [{ studentId: 1, name: "Ana", pickup: "Rua A", order: 1, eta: "17:50" }] };
   const leg = (name: string) => ({ leg: name, scheduled: "17:30", startedAt: null, eta: null, predicted: true, route });
   const dashboard = {
@@ -217,9 +216,8 @@ describe("DriverDashboard", () => {
     subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
   };
 
-  it("mostra o botão do Google Maps e abre a rota ao iniciar a ida", async () => {
-    const tab = { location: { href: "" }, close: vi.fn() };
-    const open = vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+  it("mostra a rota calculada e inicia a ida sem abrir nenhuma aba", async () => {
+    const open = vi.spyOn(window, "open");
     const fixture = TestBed.createComponent(DriverDashboard);
     fixture.componentRef.setInput("driverId", 5);
     fixture.detectChanges();
@@ -227,17 +225,18 @@ describe("DriverDashboard", () => {
     http.expectOne("/api/drivers/5/dashboard").flush(dashboard);
     await settle(fixture);
     const el: HTMLElement = fixture.nativeElement;
-    const botoes = [...el.querySelectorAll("a")].filter((a) => a.textContent?.includes("Abrir no Google Maps"));
-    expect(botoes.length).toBe(2);
-    expect(botoes[0]!.getAttribute("href")).toBe(url);
+    expect(el.textContent).toContain("Rota calculada pelos endereços");
+    expect(el.textContent).toContain("17:50");
+    expect(el.textContent).not.toContain("Google Maps");
 
     [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Iniciar ida"))!.click();
-    expect(open).toHaveBeenCalledWith("", "_blank");
-    http.expectOne("/api/drivers/5/route-runs").flush(dashboard.today);
+    const req = http.expectOne("/api/drivers/5/route-runs");
+    expect(req.request.body).toEqual({ leg: "ida" });
+    req.flush(dashboard.today);
     await settle(fixture);
-    expect(tab.location.href).toBe(url);
-    http.match("/api/drivers/5/dashboard").forEach((req) => req.flush(dashboard));
-    http.match("/api/notifications").forEach((req) => req.flush({ unread: 0, items: [] }));
+    expect(open).not.toHaveBeenCalled();
+    http.match("/api/drivers/5/dashboard").forEach((r) => r.flush(dashboard));
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
     open.mockRestore();
     fixture.destroy();
   });

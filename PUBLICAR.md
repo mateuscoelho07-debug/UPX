@@ -133,16 +133,9 @@ Cada pull request também ganha um endereço de teste próprio na Vercel, útil 
 
 Rode `pnpm dev` na pasta `site` (site e API sobem juntos em http://localhost:8443) e use um arquivo local (`data/rotau.db`). Para apontar o computador para o banco do Turso, defina `DATABASE_URL` e `DATABASE_AUTH_TOKEN` antes de rodar. Cuidado: assim você mexe nos dados reais.
 
-## Rota no Google Maps
+## Iniciar a rota e os avisos
 
-Quando o motorista toca em **Iniciar ida** ou **Iniciar volta**, o site abre o **Google Maps** com a rota pronta: só os alunos que confirmaram "Vou hoje", na ordem mais curta calculada pelo RotaU (a mesma da seção acima). No painel também ficam os botões **Abrir no Google Maps** para abrir de novo.
-
-- **Ida:** o Maps parte da **posição atual do motorista**, passa pelos alunos e termina na faculdade.
-- **Volta:** sai da faculdade e deixa os alunos em ordem; a última parada é o último aluno.
-- Usa o link oficial de rotas do Google Maps: **grátis, sem chave e sem cadastro**. No celular abre o app do Maps.
-- O Maps aceita no máximo 9 paradas por link. Com mais alunos, o painel mostra vários botões **Trecho 1 de 2**, **Trecho 2 de 2**..., cada um continuando de onde o anterior terminou.
-- Cada parada usa a posição guardada do aluno ou, se não houver, o endereço digitado. Se o navegador bloquear a abertura automática, use o botão no painel.
-- Nada para configurar na Vercel nem no Turso.
+No painel, o motorista toca em **Iniciar ida** ou **Iniciar volta**. Cada aluno que confirmou "Vou hoje" recebe um aviso no sino com a **previsão de chegada** no ponto dele (ou em casa, na volta), calculada como na seção acima. O quadro **Rota calculada pelos endereços** mostra a ordem das paradas e o horário de cada uma. O site não abre nenhum mapa: é só o aviso e a previsão.
 
 ## Assinatura mensal do motorista
 
