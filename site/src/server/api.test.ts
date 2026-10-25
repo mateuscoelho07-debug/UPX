@@ -696,21 +696,14 @@ test("assinatura: rotas da API, simulação e variáveis de ambiente", () => wit
   assert.equal((await motorista.call("POST", `/drivers/${id}/subscription`)).status, 409);
 }));
 
-test("o painel do motorista traz a rota pronta no Google Maps, na ordem calculada", async () => {
+test("o painel do motorista traz a rota calculada e o navegador não recebe as coordenadas", async () => {
   const repo = await openDatabase(":memory:");
   const norte = (await repo.adminOverview()).drivers.find((d) => d.email === `van-norte@${DEMO_VAN_DOMAIN}`)!;
   const { today, passengers } = await repo.driverDashboard(Number(norte.id), new Date("2026-10-24T19:00:00Z"));
-  const [ida, volta] = today.legs.map((l) => l.route!);
-  const query = (url: string) => new URL(url).searchParams;
-  assert.equal(ida!.mapsLinks.length, 1);
-  const pIda = query(ida!.mapsLinks[0]!.url);
-  assert.equal(pIda.get("origin"), null);
-  assert.equal(pIda.get("destination"), `${ida!.destination} Sorocaba SP`); // a faculdade mais comum entre os alunos da van
-  assert.equal(pIda.get("waypoints")!.split("|").length, 5); // todos os 5 alunos, na ordem da rota
-  const pVolta = query(volta!.mapsLinks[0]!.url);
-  assert.equal(pVolta.get("origin"), `${ida!.destination} Sorocaba SP`);
-  assert.equal(pVolta.get("waypoints")!.split("|").length, 4); // o último aluno é o destino
-  // o navegador não recebe as coordenadas internas dos passageiros
+  for (const leg of today.legs) {
+    assert.equal(leg.route!.stops.length, 5);
+    assert.ok(!("mapsLinks" in leg.route!));
+  }
   assert.ok(passengers.every((p) => !("point" in p) && !("mapsQuery" in p)));
 });
 
