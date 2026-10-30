@@ -91,6 +91,9 @@
             <span class="font-bold" [class]="van.freeSeats > 0 ? 'text-emerald-700' : 'text-red-600'">{{ van.freeSeats === 0 ? "Lotada" : van.freeSeats + " " + (van.freeSeats === 1 ? "vaga" : "vagas") }}</span>
             <span class="font-semibold text-slate-600">★ {{ rating(van.rating) }}</span>
           </div>
+          @if (van.documentsSent) {
+            <p class="-mt-2 mb-4 flex items-center gap-2 text-xs font-bold text-emerald-700"><app-icon name="check" class="size-4" /> Documentos enviados (CNH e CRLV)</p>
+          }
           @if (van.booked) {
             <p class="mt-auto flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 px-6 py-3.5 font-bold text-emerald-700"><app-icon name="check" class="size-5" /> Vaga reservada · ver detalhes</p>
           } @else if (currentVan()) {

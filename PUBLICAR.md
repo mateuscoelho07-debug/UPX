@@ -159,3 +159,12 @@ Na página **/termos** (link "Termos e Segurança" no rodapé) qualquer pessoa l
 - O texto fica em `site/src/server/terms.ts`. Se mudar de forma importante, aumente `TERMS_VERSION`: os motoristas passam a ver "os termos foram atualizados" e precisam aceitar de novo.
 - **Importante:** o texto é um modelo para o projeto. Peça a revisão de um advogado antes de usar com clientes de verdade.
 - Não precisa configurar nada na Vercel nem no Turso: as colunas novas do aceite são criadas sozinhas.
+
+## Documentos do veículo (CNH e CRLV)
+
+No painel do motorista há o cartão **Documentos do veículo**: ele envia a foto ou o PDF da CNH e do CRLV (JPG, PNG ou PDF, até 2 MB cada) e vê o status "Enviado" ou "Pendente". Pode trocar ou remover quando quiser.
+
+- Os arquivos ficam guardados no banco (Turso), ligados ao motorista, e **só ele consegue baixar**. Nem a página `/admin` nem os alunos recebem os arquivos.
+- Os alunos veem apenas o aviso "Documentos enviados (CNH e CRLV)" no cartão da van e na página dela.
+- O tipo do arquivo é conferido pelo conteúdo (não só pela extensão) e o servidor não registra o conteúdo em nenhum log. Apagar a conta do motorista apaga os documentos junto.
+- Não precisa configurar nada na Vercel nem no Turso: a tabela nova é criada sozinha. O banco do Turso cresce com os arquivos (cada um pode ter até 2 MB), então vale olhar o espaço usado de vez em quando.

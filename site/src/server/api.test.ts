@@ -797,3 +797,70 @@ test("termos: texto público, PDF e aceite digital do motorista", async () => {
   assert.equal((await pdf(rafa.cookie, `?driverId=${nova.body.id}`)).status, 403);
   assert.equal((await call("POST", `/drivers/${driver.body.id}/terms-acceptance`)).status, 401);
 });
+
+test("documentos: motorista envia CNH e CRLV, só ele baixa e o aluno vê só o aviso", async () => {
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("conteudo-da-cnh")]);
+  const pdf = Buffer.from("%PDF-1.4\nconteudo do crlv");
+  const upload = (b: ReturnType<typeof browser>, driverId: number, kind: string, bytes: Buffer, filename = "arquivo.png") =>
+    b.call("PUT", `/drivers/${driverId}/documents/${kind}`, { filename, data: bytes.toString("base64") });
+
+  const joana = browser();
+  const driver = await joana.call("POST", "/drivers", { ...newDriver, email: "docs@teste.com", plate: "DOC-1A11" });
+  const driverId = driver.body.id as number;
+
+  const vazio = await joana.call("GET", `/drivers/${driverId}/documents`);
+  assert.deepEqual(vazio.body, []);
+  assert.equal((await joana.call("GET", `/drivers/${driverId}/dashboard`)).body.documents.length, 0);
+
+  // só JPG, PNG e PDF, até 2 MB; o tipo vem do conteúdo, não do nome
+  assert.equal((await upload(joana, driverId, "cnh", Buffer.from("texto qualquer"), "cnh.png")).status, 415);
+  assert.equal((await upload(joana, driverId, "cnh", Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]))).status, 413);
+  assert.equal((await joana.call("PUT", `/drivers/${driverId}/documents/cnh`, { filename: "x.png" })).status, 400);
+  assert.equal((await upload(joana, driverId, "rg", png)).status, 404);
+
+  const cnh = await upload(joana, driverId, "cnh", png, "..\\fotos\\minha cnh.png");
+  assert.equal(cnh.status, 200);
+  assert.equal(cnh.body[0].filename, "minha cnh.png");
+  assert.equal(cnh.body[0].mime, "image/png");
+  assert.equal(JSON.stringify(cnh.body).includes(png.toString("base64")), false); // a lista não traz o conteúdo
+
+  // enviar de novo substitui
+  assert.equal((await upload(joana, driverId, "cnh", png, "cnh2.png")).body.length, 1);
+  assert.equal((await upload(joana, driverId, "crlv", pdf, "crlv.pdf")).body.length, 2);
+  const painel = await joana.call("GET", `/drivers/${driverId}/dashboard`);
+  assert.deepEqual(painel.body.documents.map((d: { kind: string }) => d.kind), ["cnh", "crlv"]);
+  assert.equal(painel.body.driver.documentsSent, true);
+
+  // o motorista baixa o próprio arquivo
+  const file = await fetch(`${base}/drivers/${driverId}/documents/cnh/file`, { headers: { Cookie: joana.cookie } });
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-type"), "image/png");
+  assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+  assert.deepEqual(Buffer.from(await file.arrayBuffer()), png);
+
+  // outro motorista, aluno e visitante não acessam
+  const outro = browser();
+  await outro.call("POST", "/drivers", { ...newDriver, email: "docs2@teste.com", plate: "DOC-2B22" });
+  const rafa = browser();
+  await rafa.call("POST", "/students", { ...newStudent, email: "aluno-docs@teste.com" });
+  for (const who of [outro, rafa, browser()]) {
+    const res = await fetch(`${base}/drivers/${driverId}/documents/cnh/file`, { headers: who.cookie ? { Cookie: who.cookie } : {} });
+    assert.ok([401, 403].includes(res.status));
+    assert.ok([401, 403].includes((await who.call("GET", `/drivers/${driverId}/documents`)).status));
+    assert.ok([401, 403].includes((await upload(who, driverId, "cnh", png)).status));
+    assert.ok([401, 403].includes((await who.call("DELETE", `/drivers/${driverId}/documents/cnh`, {})).status));
+  }
+
+  // o aluno vê só o aviso "documentos enviados", e o admin não recebe os arquivos
+  const vans = await rafa.call("GET", "/vans");
+  assert.equal(vans.body.find((v: { id: number }) => v.id === driverId).documentsSent, true);
+  assert.equal(JSON.stringify(vans.body).includes("conteudo"), false);
+  const detail = await rafa.call("GET", `/vans/${driverId}`);
+  assert.equal(detail.body.documentsSent, true);
+
+  // apagar um documento tira o aviso
+  const apagado = await joana.call("DELETE", `/drivers/${driverId}/documents/crlv`, {});
+  assert.equal(apagado.body.length, 1);
+  assert.equal((await rafa.call("GET", `/vans/${driverId}`)).body.documentsSent, false);
+  assert.equal((await fetch(`${base}/drivers/${driverId}/documents/crlv/file`, { headers: { Cookie: joana.cookie } })).status, 404);
+});

@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS drivers (
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Documentos do motorista (CNH e CRLV), um de cada tipo. Só o próprio motorista baixa o arquivo.
+CREATE TABLE IF NOT EXISTS driver_documents (
+  driver_id   INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL CHECK (kind IN ('cnh', 'crlv')),
+  filename    TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  size        INTEGER NOT NULL,
+  content     BLOB NOT NULL,
+  uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (driver_id, kind)
+);
+
 -- Cidades por onde cada motorista passa (ordem = ordem da rota)
 CREATE TABLE IF NOT EXISTS driver_cities (
   driver_id  INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,

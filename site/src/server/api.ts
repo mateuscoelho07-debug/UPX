@@ -3,6 +3,7 @@
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { ApiError, DEMO_VAN_DOMAIN, openDatabase, type Repository } from "./db.ts";
+import { documentKind, MAX_DOCUMENT_JSON, readUpload } from "./documents.ts";
 import { termsDocument, termsPdf } from "./terms.ts";
 import {
   clearSessionCookie,
@@ -42,6 +43,8 @@ export function createApp(
   // Atrás de um proxy HTTPS (ex.: hospedagem), defina TRUST_PROXY para o Express ver o IP e o protocolo reais
   if (process.env.TRUST_PROXY) app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
   app.disable("x-powered-by");
+  // Envio de documentos do motorista: JSON maior só nesta rota (o arquivo vai em base64)
+  app.use("/api/drivers/:id/documents", express.json({ limit: MAX_DOCUMENT_JSON }));
   app.use("/api", express.json());
 
   // Requisições que alteram dados precisam vir em JSON: formulários de outros
@@ -189,6 +192,36 @@ export function createApp(
     requireUser(res, "driver", driverId);
     return repo.subscribe(driverId);
   }, 200));
+  // Documentos do motorista (CNH e CRLV): só o próprio motorista lista, envia, baixa e apaga
+  app.get("/api/drivers/:id/documents", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.listDocuments(driverId);
+  }));
+  app.put("/api/drivers/:id/documents/:kind", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.saveDocument(driverId, documentKind(req.params.kind), readUpload(body(req)));
+  }, 200));
+  app.get("/api/drivers/:id/documents/:kind/file", async (req, res, next) => {
+    try {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      const file = await repo.getDocument(driverId, documentKind(req.params.kind));
+      res.status(200)
+        .type(file.mime)
+        .set("Content-Disposition", `attachment; filename="${req.params.kind}${{ "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" }[file.mime]}"`)
+        .set("Cache-Control", "private, no-store")
+        .set("X-Content-Type-Options", "nosniff")
+        .send(file.bytes);
+    } catch (error) { next(error); }
+  });
+  app.delete("/api/drivers/:id/documents/:kind", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.deleteDocument(driverId, documentKind(req.params.kind));
+  }));
+
   // Aceite digital dos termos de segurança e conduta
   app.post("/api/drivers/:id/terms-acceptance", route((req, res) => {
     const driverId = id(req.params.id);
@@ -316,6 +349,8 @@ export function createApp(
   const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof ApiError) {
       res.status(error.status).json({ error: error.message });
+    } else if ((error as { type?: string }).type === "entity.too.large") {
+      res.status(413).json({ error: "O arquivo é grande demais. O limite é 2 MB." });
     } else if (error instanceof SyntaxError) {
       res.status(400).json({ error: "JSON inválido." });
     } else {
