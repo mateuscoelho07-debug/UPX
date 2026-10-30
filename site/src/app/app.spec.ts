@@ -7,6 +7,7 @@ import { StudentDashboard } from "./dashboard/student-dashboard";
 import VanDetailPage from "./dashboard/van-detail-page";
 import { DeleteAccount } from "./dashboard/delete-account";
 import { SubscriptionCard } from "./dashboard/subscription-card";
+import { DocumentsCard } from "./dashboard/documents-card";
 import { TermsCard } from "./dashboard/terms-card";
 import { DriverDashboard } from "./dashboard/driver-dashboard";
 
@@ -84,7 +85,7 @@ describe("VanDetailPage", () => {
   const detail = {
     id: 3, driver: "Carlos", vehicle: "Master • 12 lugares", plate: "ABC-1D23", phone: null, route: "Centro → Facens",
     cities: ["Centro", "Zona Norte"], colleges: ["Facens"], time: "06:30", returnTime: "22:40", capacity: 12, freeSeats: 4,
-    rating: 4.9, booked: false, bookingId: null, bookingStatus: null, current: null,
+    rating: 4.9, booked: false, documentsSent: true, bookingId: null, bookingStatus: null, current: null,
   };
 
   function open(van: object) {
@@ -204,6 +205,53 @@ describe("SubscriptionCard", () => {
   });
 });
 
+describe("DocumentsCard", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
+
+  function open(documents: object[]) {
+    const fixture = TestBed.createComponent(DocumentsCard);
+    fixture.componentRef.setInput("driverId", 7);
+    fixture.componentRef.setInput("documents", documents);
+    fixture.detectChanges();
+    return { fixture, http: TestBed.inject(HttpTestingController), el: fixture.nativeElement as HTMLElement };
+  }
+
+  const cnh = { kind: "cnh", filename: "cnh.png", mime: "image/png", size: 2048, uploadedAt: "2026-10-30 12:00:00" };
+
+  it("mostra o que falta enviar e o que já foi enviado", () => {
+    const { el } = open([cnh]);
+    expect(el.textContent).toContain("Envie a CNH e o CRLV");
+    expect(el.textContent).toContain("cnh.png · 2 KB");
+    expect(el.textContent).toContain("Pendente");
+    expect(el.querySelector("a")!.getAttribute("href")).toBe("/api/drivers/7/documents/cnh/file");
+  });
+
+  it("envia o arquivo escolhido em base64 e recusa o que passa de 2 MB", async () => {
+    const { fixture, http, el } = open([]);
+    let changed = 0;
+    fixture.componentInstance.changed.subscribe(() => changed++);
+    const input = el.querySelector<HTMLInputElement>("input[type=file]")!;
+    const choose = (file: File) => {
+      Object.defineProperty(input, "files", { value: [file], configurable: true });
+      input.dispatchEvent(new Event("change"));
+    };
+
+    choose(new File([new Uint8Array(2 * 1024 * 1024 + 1)], "grande.pdf"));
+    await settle(fixture);
+    expect(el.textContent).toContain("limite é 2 MB");
+    http.expectNone("/api/drivers/7/documents/cnh");
+
+    choose(new File([new Uint8Array([0xff, 0xd8, 0xff])], "foto.jpg"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const req = http.expectOne("/api/drivers/7/documents/cnh");
+    expect(req.request.method).toBe("PUT");
+    expect(req.request.body).toEqual({ filename: "foto.jpg", data: "/9j/" });
+    req.flush([cnh]);
+    await settle(fixture);
+    expect(changed).toBe(1);
+  });
+});
+
 describe("TermsCard", () => {
   beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
 
@@ -248,6 +296,7 @@ describe("DriverDashboard", () => {
     passengers: [], mainDestination: "Fatec",
     today: { day: "2026-10-24", weekday: "Sábado", going: 1, notGoing: 0, pending: 0, legs: [leg("ida"), leg("volta")] },
     subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
+    documents: [],
     terms: { version: "1.0", acceptedVersion: null, acceptedAt: null, accepted: false },
   };
 
