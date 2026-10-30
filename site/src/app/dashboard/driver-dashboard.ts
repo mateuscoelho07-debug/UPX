@@ -4,13 +4,14 @@ import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
 import { DeleteAccount } from "./delete-account";
 import { SubscriptionCard } from "./subscription-card";
+import { TermsCard } from "./terms-card";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
 
 // Painel do motorista: quem vai hoje, rota do dia e botões para iniciar a ida e a volta
 @Component({
   selector: "app-driver-dashboard",
-  imports: [DashboardHeader, DeleteAccount, Icon, StatusMessage, SubscriptionCard],
+  imports: [DashboardHeader, DeleteAccount, Icon, StatusMessage, SubscriptionCard, TermsCard],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./driver-dashboard.html",
 })
