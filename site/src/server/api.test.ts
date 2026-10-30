@@ -641,21 +641,21 @@ test("assinatura: avisos no sino perto do vencimento, sem repetir", () => withSu
   assert.deepEqual(await titulos(), ["Assine para liberar sua van"]);
 
   const day = (iso: string) => new Date(`${iso}T15:00:00Z`);
-  await repo.subscribe(driver.id, day("2026-10-01")); // vale até 2026-10-31
-  await repo.checkSubscriptionNotices(driver.id, day("2026-10-20")); // falta muito: sem aviso
+  await repo.subscribe(driver.id, day("2031-10-01")); // vale até 2031-10-31
+  await repo.checkSubscriptionNotices(driver.id, day("2031-10-20")); // falta muito: sem aviso
   assert.equal((await titulos()).filter((t) => t === "Assinatura perto de vencer").length, 0);
-  await repo.checkSubscriptionNotices(driver.id, day("2026-10-29"));
-  await repo.checkSubscriptionNotices(driver.id, day("2026-10-30"));
+  await repo.checkSubscriptionNotices(driver.id, day("2031-10-29"));
+  await repo.checkSubscriptionNotices(driver.id, day("2031-10-30"));
   assert.equal((await titulos()).filter((t) => t === "Assinatura perto de vencer").length, 1);
-  await repo.checkSubscriptionNotices(driver.id, day("2026-11-02"));
-  await repo.checkSubscriptionNotices(driver.id, day("2026-11-03"));
+  await repo.checkSubscriptionNotices(driver.id, day("2031-11-02"));
+  await repo.checkSubscriptionNotices(driver.id, day("2031-11-03"));
   const todos = await repo.notifications(user);
   assert.equal(todos.items.filter((n) => n.title === "Assinatura vencida").length, 1);
-  assert.match(todos.items.find((n) => n.title === "Assinatura vencida")!.body, /31\/10\/2026/);
+  assert.match(todos.items.find((n) => n.title === "Assinatura vencida")!.body, /31\/10\/2031/);
 
   // renovar zera o controle: o próximo vencimento avisa de novo
-  await repo.subscribe(driver.id, day("2026-11-03"));
-  assert.equal((await repo.subscription(driver.id, day("2026-11-03"))).active, true);
+  await repo.subscribe(driver.id, day("2031-11-03"));
+  assert.equal((await repo.subscription(driver.id, day("2031-11-03"))).active, true);
 }));
 
 test("assinatura: rotas da API, simulação e variáveis de ambiente", () => withSubscription(async () => {
@@ -748,4 +748,52 @@ test("alunos coringa respeitam as vagas e o CORINGA_DRIVERS", async () => {
   } finally {
     delete process.env.CORINGA_DRIVERS;
   }
+});
+
+test("termos: texto público, PDF e aceite digital do motorista", async () => {
+  const pdf = async (cookie: string, query = "") => {
+    const res = await fetch(`${base}/terms.pdf${query}`, { headers: cookie ? { Cookie: cookie } : {} });
+    return { status: res.status, type: res.headers.get("content-type"), bytes: Buffer.from(await res.arrayBuffer()) };
+  };
+
+  const texto = await call("GET", "/terms");
+  assert.equal(texto.status, 200);
+  assert.ok(texto.body.sections.length >= 5);
+
+  // sem login o PDF sai só com o texto; sem aceite do motorista
+  const publico = await pdf("");
+  assert.equal(publico.status, 200);
+  assert.equal(publico.type, "application/pdf");
+  assert.equal(publico.bytes.subarray(0, 5).toString(), "%PDF-");
+  assert.equal((await pdf("", "?driverId=1")).status, 401);
+
+  // motorista cria a conta sem aceitar: o painel avisa e o PDF diz que não aceitou
+  const joana = browser();
+  const driver = await joana.call("POST", "/drivers", { ...newDriver, email: "termos@teste.com", plate: "TER-1A11" });
+  assert.equal(driver.status, 201);
+  const antes = await joana.call("GET", `/drivers/${driver.body.id}/dashboard`);
+  assert.equal(antes.body.terms.accepted, false);
+  assert.equal((await pdf(joana.cookie, `?driverId=${driver.body.id}`)).status, 200);
+
+  const aceite = await joana.call("POST", `/drivers/${driver.body.id}/terms-acceptance`);
+  assert.equal(aceite.status, 200);
+  assert.equal(aceite.body.version, "1.0");
+  assert.match(aceite.body.acceptedAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  const depois = await joana.call("GET", `/drivers/${driver.body.id}/dashboard`);
+  assert.equal(depois.body.terms.accepted, true);
+
+  // aceitar no cadastro
+  const marcou = browser();
+  const nova = await marcou.call("POST", "/drivers", { ...newDriver, email: "termos2@teste.com", plate: "TER-2B22", acceptTerms: true });
+  assert.equal((await marcou.call("GET", `/drivers/${nova.body.id}/dashboard`)).body.terms.accepted, true);
+
+  // quem pode pedir o PDF com o aceite: o próprio motorista e o aluno que reservou nessa van
+  assert.equal((await pdf(marcou.cookie, `?driverId=${driver.body.id}`)).status, 403);
+  const rafa = browser();
+  await rafa.call("POST", "/students", { ...newStudent, email: "aluno-termos@teste.com" });
+  assert.equal((await pdf(rafa.cookie, `?driverId=${driver.body.id}`)).status, 403); // ainda sem reserva
+  await rafa.call("POST", "/bookings", { driverId: driver.body.id });
+  assert.equal((await pdf(rafa.cookie, `?driverId=${driver.body.id}`)).status, 200);
+  assert.equal((await pdf(rafa.cookie, `?driverId=${nova.body.id}`)).status, 403);
+  assert.equal((await call("POST", `/drivers/${driver.body.id}/terms-acceptance`)).status, 401);
 });

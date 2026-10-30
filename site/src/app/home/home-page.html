@@ -175,6 +175,7 @@
       <app-logo />
       <div class="flex items-center gap-5 text-sm text-slate-500">
         <p>© 2026 RotaU. Seu caminho para a universidade.</p>
+        <a class="font-semibold hover:text-slate-800" href="/termos">Termos e Segurança</a>
         <a class="font-semibold hover:text-slate-800" href="/admin">Admin</a>
       </div>
     </div>
@@ -255,7 +256,7 @@
               }
               <label class="flex items-start gap-3 text-sm leading-6 text-slate-600">
                 <input class="mt-1 size-4 accent-blue-600" type="checkbox" required />
-                Aceito os termos de uso e a política de privacidade do RotaU.
+                Aceito os <a class="font-semibold text-blue-700 underline" href="/termos" target="_blank" rel="noopener">termos de uso, de segurança e a política de privacidade</a> do RotaU.
               </label>
               @if (signupError()) {
                 <p class="rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ signupError() }}</p>

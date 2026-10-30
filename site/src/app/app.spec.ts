@@ -7,6 +7,7 @@ import { StudentDashboard } from "./dashboard/student-dashboard";
 import VanDetailPage from "./dashboard/van-detail-page";
 import { DeleteAccount } from "./dashboard/delete-account";
 import { SubscriptionCard } from "./dashboard/subscription-card";
+import { TermsCard } from "./dashboard/terms-card";
 import { DriverDashboard } from "./dashboard/driver-dashboard";
 
 const day = {
@@ -203,6 +204,39 @@ describe("SubscriptionCard", () => {
   });
 });
 
+describe("TermsCard", () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+
+  function open(terms: object) {
+    const fixture = TestBed.createComponent(TermsCard);
+    fixture.componentRef.setInput("driverId", 7);
+    fixture.componentRef.setInput("terms", terms);
+    fixture.detectChanges();
+    return { fixture, http: TestBed.inject(HttpTestingController), el: fixture.nativeElement as HTMLElement };
+  }
+
+  it("pede o aceite, envia e oferece o PDF com a assinatura", async () => {
+    const { fixture, http, el } = open({ version: "1.0", acceptedVersion: null, acceptedAt: null, accepted: false });
+    expect(el.textContent).toContain("Aceite os termos");
+    let changed = 0;
+    fixture.componentInstance.changed.subscribe(() => changed++);
+    el.querySelector<HTMLButtonElement>("button")!.click();
+    const req = http.expectOne("/api/drivers/7/terms-acceptance");
+    expect(req.request.method).toBe("POST");
+    req.flush({ version: "1.0" });
+    await settle(fixture);
+    expect(changed).toBe(1);
+    expect(el.querySelector<HTMLAnchorElement>("a[download]")!.getAttribute("href")).toBe("/api/terms.pdf?driverId=7");
+  });
+
+  it("mostra a data do aceite em horário de Brasília", () => {
+    const { el } = open({ version: "1.0", acceptedVersion: "1.0", acceptedAt: "2026-10-30 12:14:05", accepted: true });
+    expect(el.textContent).toContain("Termos aceitos em 30/10/2026");
+    expect(el.textContent).toContain("09:14");
+    expect(el.querySelector("button")).toBeNull();
+  });
+});
+
 describe("DriverDashboard", () => {
   beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
 
@@ -214,6 +248,7 @@ describe("DriverDashboard", () => {
     passengers: [], mainDestination: "Fatec",
     today: { day: "2026-10-24", weekday: "Sábado", going: 1, notGoing: 0, pending: 0, legs: [leg("ida"), leg("volta")] },
     subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
+    terms: { version: "1.0", acceptedVersion: null, acceptedAt: null, accepted: false },
   };
 
   it("mostra a rota calculada e inicia a ida sem abrir nenhuma aba", async () => {

@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS drivers (
   return_time    TEXT,                           -- saída da volta (nulo = a combinar)
   subscription_until  TEXT,                      -- assinatura em dia até esta data (AAAA-MM-DD); nulo = nunca assinou
   subscription_notice TEXT,                      -- último aviso de vencimento enviado (evita repetir)
+  terms_version  TEXT,                           -- versão dos termos que o motorista aceitou (nulo = não aceitou)
+  terms_accepted_at TEXT,                        -- quando aceitou (UTC)
   rating         REAL NOT NULL DEFAULT 5.0 CHECK (rating BETWEEN 0 AND 5),
   password_hash  TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))

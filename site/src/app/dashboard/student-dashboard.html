@@ -26,6 +26,7 @@
                 }
               </div>
               <p class="mt-4 text-slate-700">Motorista: {{ van.driver }} · embarque em {{ van.pickup }}{{ van.pickupTime ? " às " + van.pickupTime : "" }}</p>
+              <p class="mt-2 text-sm"><a class="font-semibold text-blue-700 underline" [href]="'/api/terms.pdf?driverId=' + van.driverId" download="termos-rotau.pdf">Termos de segurança e conduta (PDF, com o aceite do motorista)</a></p>
               <p class="mt-1 text-xs text-slate-500">
                 Previsão calculada pela distância entre os endereços de todos os alunos da van que vão hoje ({{ van.goingCount }} {{ van.goingCount === 1 ? "aluno" : "alunos" }}).
               </p>

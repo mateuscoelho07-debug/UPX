@@ -149,3 +149,13 @@ O RotaU ganha dinheiro com uma **assinatura mensal só dos motoristas** (o aluno
 - **Atenção:** o pagamento ainda é **simulado**: o botão renova sem cobrar nada. Para cobrar de verdade falta ligar um serviço de pagamento (Stripe ou Mercado Pago) no lugar do botão simulado. Quando isso estiver pronto, defina `SUBSCRIPTION_PAYMENT` com outro valor que não seja `simulado` para desligar o botão simulado.
 - **Motoristas que já existiam** no banco ficam sem assinatura e somem das buscas até assinarem. Se não quiser isso agora, defina `SUBSCRIPTION=off`.
 - Nada para fazer no Turso: as colunas novas (`subscription_until` e `subscription_notice`) são criadas sozinhas na primeira visita.
+
+## Termos e Segurança (PDF)
+
+Na página **/termos** (link "Termos e Segurança" no rodapé) qualquer pessoa lê as regras de convivência, os termos de uso e as políticas de segurança e clica em **Exportar em PDF**. O PDF é gerado pelo próprio site, de graça, sem serviço externo.
+
+- **Motorista:** no painel há um cartão "Termos e Segurança" para aceitar (assinatura digital: nome, e-mail, data e hora de Brasília e um código de verificação) e exportar o PDF com esse aceite. Quem ainda não aceitou recebe um PDF dizendo que o aceite não foi feito. Ao se cadastrar, o aceite já é registrado pela caixinha do formulário.
+- **Aluno:** no painel, depois de reservar, aparece o link do PDF com o aceite do motorista da van dele.
+- O texto fica em `site/src/server/terms.ts`. Se mudar de forma importante, aumente `TERMS_VERSION`: os motoristas passam a ver "os termos foram atualizados" e precisam aceitar de novo.
+- **Importante:** o texto é um modelo para o projeto. Peça a revisão de um advogado antes de usar com clientes de verdade.
+- Não precisa configurar nada na Vercel nem no Turso: as colunas novas do aceite são criadas sozinhas.
