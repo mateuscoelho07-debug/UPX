@@ -13,6 +13,7 @@ import { geocode } from "./geocode.ts";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
 import { isSubscriptionActive, renewedUntil, subscriptionConfig, subscriptionInfo, type SubscriptionInfo } from "./subscription.ts";
+import { DOCUMENT_KINDS, documentKind, type DocumentKind, type DocumentMime } from "./documents.ts";
 import { TERMS_VERSION, type DriverAcceptance } from "./terms.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
 
@@ -51,7 +52,11 @@ export type Driver = {
   subscriptionUntil: string | null;
   // assinatura em dia (ou motorista de demonstração): só assim a van aparece para os alunos
   subscriptionActive: boolean;
+  // CNH e CRLV enviados (os alunos veem só este aviso, nunca os arquivos)
+  documentsSent: boolean;
 };
+
+export type DriverDocument = { kind: DocumentKind; filename: string; mime: DocumentMime; size: number; uploadedAt: string };
 
 export type Van = {
   id: number;
@@ -64,6 +69,7 @@ export type Van = {
   freeSeats: number;
   rating: number;
   booked: boolean;
+  documentsSent: boolean;
 };
 
 // Página da van: tudo o que o estudante precisa para decidir e confirmar presença
@@ -82,6 +88,7 @@ export type VanDetail = {
   freeSeats: number;
   rating: number;
   booked: boolean;
+  documentsSent: boolean;
   bookingId: number | null;
   bookingStatus: BookingStatus | null;
   // van atual do estudante, quando é outra (escolher esta substitui a atual)
@@ -128,7 +135,7 @@ export type DriverInput = {
   passwordHash?: string;
 };
 
-type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats" | "subscriptionActive"> & { cities: string | null; colleges: string | null };
+type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats" | "subscriptionActive" | "documentsSent"> & { documentCount: number } & { cities: string | null; colleges: string | null };
 
 export type Leg = "ida" | "volta";
 export const legs: Leg[] = ["ida", "volta"];
@@ -347,13 +354,15 @@ function createRepository(db: Client) {
     SELECT d.id, d.name, d.phone, d.email, d.van_model AS vanModel, d.plate, d.capacity,
            d.departure_time AS departureTime, d.return_time AS returnTime, d.rating, d.subscription_until AS subscriptionUntil,
            (SELECT COUNT(*) FROM bookings b WHERE b.driver_id = d.id AND b.status <> 'Cancelado') AS occupied,
+           (SELECT COUNT(*) FROM driver_documents x WHERE x.driver_id = d.id) AS documentCount,
            (SELECT group_concat(city, ',') FROM (SELECT city FROM driver_cities WHERE driver_id = d.id ORDER BY position)) AS cities,
            (SELECT group_concat(c.name, ',') FROM driver_colleges dc JOIN colleges c ON c.id = dc.college_id WHERE dc.driver_id = d.id) AS colleges
     FROM drivers d`;
 
-  function toDriver(row: DriverRow): Driver {
+  function toDriver({ documentCount, ...row }: DriverRow): Driver {
     return {
       ...row,
+      documentsSent: Number(documentCount) >= DOCUMENT_KINDS.length,
       cities: row.cities ? row.cities.split(",") : [],
       colleges: row.colleges ? row.colleges.split(",") : [],
       freeSeats: Math.max(row.capacity - row.occupied, 0),
@@ -558,6 +567,7 @@ function createRepository(db: Client) {
         freeSeats: driver.freeSeats,
         rating: driver.rating,
         booked: bookedDriverIds.has(driver.id),
+        documentsSent: driver.documentsSent,
       }));
     },
 
@@ -590,6 +600,7 @@ function createRepository(db: Client) {
         freeSeats: driver.freeSeats,
         rating: driver.rating,
         booked: Boolean(mine),
+        documentsSent: driver.documentsSent,
         bookingId: mine?.id ?? null,
         bookingStatus: mine?.status ?? null,
         current: !mine && other ? { driverId: other.driverId, driver: other.driver, bookingId: other.id } : null,
@@ -664,6 +675,34 @@ function createRepository(db: Client) {
       if (notice !== null && notice !== row.notice) await run("UPDATE drivers SET subscription_notice = ? WHERE id = ?", [notice, driverId]);
     },
 
+    // Documentos do motorista (RF011): a lista traz só nome, tipo e tamanho; o conteúdo sai apenas em getDocument
+    async listDocuments(driverId: number): Promise<DriverDocument[]> {
+      return all<DriverDocument>(
+        "SELECT kind, filename, mime, size, uploaded_at AS uploadedAt FROM driver_documents WHERE driver_id = ? ORDER BY kind", [driverId]);
+    },
+
+    async saveDocument(driverId: number, kind: DocumentKind, file: { filename: string; mime: DocumentMime; bytes: Buffer }): Promise<DriverDocument[]> {
+      await getDriver(driverId);
+      await run(`
+        INSERT INTO driver_documents (driver_id, kind, filename, mime, size, content) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (driver_id, kind) DO UPDATE SET filename = excluded.filename, mime = excluded.mime, size = excluded.size,
+          content = excluded.content, uploaded_at = datetime('now')`,
+        [driverId, kind, file.filename, file.mime, file.bytes.length, new Uint8Array(file.bytes)]);
+      return repo.listDocuments(driverId);
+    },
+
+    async getDocument(driverId: number, kind: DocumentKind): Promise<{ filename: string; mime: DocumentMime; bytes: Buffer }> {
+      const row = await get<{ filename: string; mime: DocumentMime; content: ArrayBuffer }>(
+        "SELECT filename, mime, content FROM driver_documents WHERE driver_id = ? AND kind = ?", [driverId, documentKind(kind)]);
+      if (!row) throw new ApiError(404, "Documento não enviado.");
+      return { filename: row.filename, mime: row.mime, bytes: Buffer.from(row.content) };
+    },
+
+    async deleteDocument(driverId: number, kind: DocumentKind): Promise<DriverDocument[]> {
+      await run("DELETE FROM driver_documents WHERE driver_id = ? AND kind = ?", [driverId, documentKind(kind)]);
+      return repo.listDocuments(driverId);
+    },
+
     // Aceite dos termos de segurança e conduta (RF010)
     async termsAcceptance(driverId: number): Promise<DriverAcceptance> {
       const row = await get<{ id: number; name: string; email: string; version: string | null; acceptedAt: string | null }>(
@@ -684,7 +723,7 @@ function createRepository(db: Client) {
     },
 
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
-    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo; terms: { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean } }> {
+    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo; documents: DriverDocument[]; terms: { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean } }> {
       await repo.checkSubscriptionNotices(driverId, now);
       await repo.ensureCoringas(driverId); // motorista criado depois da última partida do servidor também ganha os coringas
       const driver = await getDriver(driverId);
@@ -723,7 +762,7 @@ function createRepository(db: Client) {
       };
       const acceptance = await repo.termsAcceptance(driverId);
       const terms = { version: TERMS_VERSION, acceptedVersion: acceptance.version, acceptedAt: acceptance.acceptedAt, accepted: acceptance.version === TERMS_VERSION };
-      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)), terms };
+      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)), documents: await repo.listDocuments(driverId), terms };
     },
 
     // Descobre a posição do endereço do estudante (uma tentativa por execução do servidor; falhou, usa a aproximação)
@@ -1013,7 +1052,7 @@ function createRepository(db: Client) {
           for (const { studentId } of riders) {
             await notify({ profile: "student", id: studentId }, "Van encerrada", `${driver.name} excluiu a conta. Escolha outra van no painel.`, tx);
           }
-          for (const table of ["attendance", "route_runs", "bookings", "driver_cities", "driver_colleges"]) {
+          for (const table of ["attendance", "route_runs", "bookings", "driver_cities", "driver_colleges", "driver_documents"]) {
             await run(`DELETE FROM ${table} WHERE driver_id = ?`, [user.id], tx);
           }
           await run("DELETE FROM drivers WHERE id = ?", [user.id], tx);
