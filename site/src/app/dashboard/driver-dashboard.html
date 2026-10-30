@@ -17,6 +17,7 @@
 
     @if (data(); as d) {
       <app-subscription-card [driverId]="driverId()" [subscription]="d.subscription" (changed)="load()" (unauthorized)="logout.emit()" />
+      <app-documents-card [driverId]="driverId()" [documents]="d.documents" (changed)="load()" (unauthorized)="logout.emit()" />
       <app-terms-card [driverId]="driverId()" [terms]="d.terms" (changed)="load()" (unauthorized)="logout.emit()" />
 
       <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

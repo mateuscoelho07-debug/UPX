@@ -28,6 +28,7 @@
             <div class="flex gap-3"><app-icon name="clock" class="mt-0.5 size-5 text-blue-600" /><div><dt class="font-bold text-slate-500">Horários</dt><dd class="text-slate-800">Ida às {{ v.time }} · {{ v.returnTime ? "volta às " + v.returnTime : "volta a combinar com o motorista" }}</dd></div></div>
             <div class="flex gap-3"><app-icon name="student" class="mt-0.5 size-5 text-blue-600" /><div><dt class="font-bold text-slate-500">Faculdades atendidas</dt><dd class="text-slate-800">{{ v.colleges.join(", ") }}</dd></div></div>
             <div class="flex gap-3"><app-icon name="user" class="mt-0.5 size-5 text-blue-600" /><div><dt class="font-bold text-slate-500">Vagas</dt><dd class="font-semibold" [class]="v.freeSeats > 0 ? 'text-emerald-700' : 'text-red-600'">{{ v.freeSeats === 0 ? "Lotada" : v.freeSeats + " livres de " + v.capacity }}</dd></div></div>
+            <div class="flex gap-3"><app-icon name="check" class="mt-0.5 size-5 text-blue-600" /><div><dt class="font-bold text-slate-500">Documentos do motorista</dt><dd class="font-semibold" [class]="v.documentsSent ? 'text-emerald-700' : 'text-slate-500'">{{ v.documentsSent ? "CNH e CRLV enviados" : "Ainda não enviados" }}</dd></div></div>
             @if (v.phone) {
               <div class="flex gap-3"><app-icon name="check" class="mt-0.5 size-5 text-blue-600" /><div><dt class="font-bold text-slate-500">Contato do motorista</dt><dd class="text-slate-800">{{ v.phone }}</dd></div></div>
             }

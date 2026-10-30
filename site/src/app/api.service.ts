@@ -35,7 +35,11 @@ export type Driver = {
   colleges: string[];
   subscriptionUntil: string | null;
   subscriptionActive: boolean;
+  documentsSent: boolean;
 };
+
+export type DocumentKind = "cnh" | "crlv";
+export type DriverDocument = { kind: DocumentKind; filename: string; mime: string; size: number; uploadedAt: string };
 
 // Assinatura mensal do motorista (o pagamento ainda é simulado)
 export type Subscription = {
@@ -59,6 +63,7 @@ export type Van = {
   freeSeats: number;
   rating: number;
   booked: boolean;
+  documentsSent: boolean;
 };
 
 export type VanDetail = {
@@ -76,6 +81,7 @@ export type VanDetail = {
   freeSeats: number;
   rating: number;
   booked: boolean;
+  documentsSent: boolean;
   bookingId: number | null;
   bookingStatus: BookingStatus | null;
   current: { driverId: number; driver: string; bookingId: number } | null;
@@ -134,7 +140,7 @@ export type StudentToday = {
   legs: TodayLeg[];
 };
 
-export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription; terms: DriverTerms };
+export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription; documents: DriverDocument[]; terms: DriverTerms };
 
 export type DriverTerms = { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean };
 export type TermsDocument = { version: string; updatedAt: string; intro: string; sections: { title: string; paragraphs: string[]; bullets?: string[] }[] };
@@ -215,6 +221,10 @@ export class ApiService {
   student = (id: number) => this.request<Student>("GET", `/students/${id}`);
   createDriver = (data: DriverSignup) => this.request<Driver>("POST", "/drivers", data);
   driverDashboard = (id: number) => this.request<DriverDashboardData>("GET", `/drivers/${id}/dashboard`);
+  documents = (id: number) => this.request<DriverDocument[]>("GET", `/drivers/${id}/documents`);
+  uploadDocument = (id: number, kind: DocumentKind, filename: string, data: string) =>
+    this.request<DriverDocument[]>("PUT", `/drivers/${id}/documents/${kind}`, { filename, data });
+  deleteDocument = (id: number, kind: DocumentKind) => this.request<DriverDocument[]>("DELETE", `/drivers/${id}/documents/${kind}`);
   terms = () => this.request<TermsDocument>("GET", "/terms");
   acceptTerms = (id: number) => this.request<unknown>("POST", `/drivers/${id}/terms-acceptance`);
   subscribe = (id: number) => this.request<Subscription>("POST", `/drivers/${id}/subscription`);
