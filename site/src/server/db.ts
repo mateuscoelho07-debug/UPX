@@ -13,6 +13,7 @@ import { geocode } from "./geocode.ts";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
 import { isSubscriptionActive, renewedUntil, subscriptionConfig, subscriptionInfo, type SubscriptionInfo } from "./subscription.ts";
+import { TERMS_VERSION, type DriverAcceptance } from "./terms.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
 
 export { ApiError };
@@ -211,6 +212,7 @@ async function migrate(db: Client) {
     ["students", "password_hash", "TEXT"], ["drivers", "password_hash", "TEXT"], ["drivers", "return_time", "TEXT"],
     ["students", "lat", "REAL"], ["students", "lng", "REAL"],
     ["drivers", "subscription_until", "TEXT"], ["drivers", "subscription_notice", "TEXT"],
+    ["drivers", "terms_version", "TEXT"], ["drivers", "terms_accepted_at", "TEXT"],
   ];
   for (const [table, column, type] of columns) {
     const { rows } = await db.execute(`PRAGMA table_info(${table})`);
@@ -662,8 +664,27 @@ function createRepository(db: Client) {
       if (notice !== null && notice !== row.notice) await run("UPDATE drivers SET subscription_notice = ? WHERE id = ?", [notice, driverId]);
     },
 
+    // Aceite dos termos de segurança e conduta (RF010)
+    async termsAcceptance(driverId: number): Promise<DriverAcceptance> {
+      const row = await get<{ id: number; name: string; email: string; version: string | null; acceptedAt: string | null }>(
+        "SELECT id, name, email, terms_version AS version, terms_accepted_at AS acceptedAt FROM drivers WHERE id = ?", [driverId]);
+      if (!row) throw new ApiError(404, "Motorista não encontrado.");
+      return row;
+    },
+
+    async acceptTerms(driverId: number): Promise<DriverAcceptance> {
+      await repo.termsAcceptance(driverId);
+      await run("UPDATE drivers SET terms_version = ?, terms_accepted_at = datetime('now') WHERE id = ?", [TERMS_VERSION, driverId]);
+      return repo.termsAcceptance(driverId);
+    },
+
+    // Estudante com reserva ativa pode baixar o PDF com o aceite do motorista da van dele
+    async studentDriverId(studentId: number): Promise<number | null> {
+      return (await activeBooking(studentId))?.driverId ?? null;
+    },
+
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
-    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo }> {
+    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo; terms: { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean } }> {
       await repo.checkSubscriptionNotices(driverId, now);
       await repo.ensureCoringas(driverId); // motorista criado depois da última partida do servidor também ganha os coringas
       const driver = await getDriver(driverId);
@@ -700,7 +721,9 @@ function createRepository(db: Client) {
           return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: null, predicted, route };
         }),
       };
-      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)) };
+      const acceptance = await repo.termsAcceptance(driverId);
+      const terms = { version: TERMS_VERSION, acceptedVersion: acceptance.version, acceptedAt: acceptance.acceptedAt, accepted: acceptance.version === TERMS_VERSION };
+      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)), terms };
     },
 
     // Descobre a posição do endereço do estudante (uma tentativa por execução do servidor; falhou, usa a aproximação)

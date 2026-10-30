@@ -3,6 +3,7 @@
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { ApiError, DEMO_VAN_DOMAIN, openDatabase, type Repository } from "./db.ts";
+import { termsDocument, termsPdf } from "./terms.ts";
 import {
   clearSessionCookie,
   createLoginLimiter,
@@ -120,6 +121,29 @@ export function createApp(
   app.get("/api/colleges", route(() => repo.listColleges()));
   app.post("/api/searches", route((req) => repo.searchRoutes(body(req))));
 
+  // Termos de segurança e conduta (RF010): texto público e PDF para exportar.
+  // Com ?driverId, o PDF traz o aceite digital desse motorista; só ele ou um aluno com reserva na van dele pode pedir.
+  app.get("/api/terms", route(() => termsDocument));
+  app.get("/api/terms.pdf", async (req, res, next) => {
+    try {
+      let acceptance;
+      if (req.query.driverId !== undefined) {
+        const driverId = id(req.query.driverId);
+        const user = res.locals.user as SessionUser | undefined;
+        if (!user) throw new ApiError(401, "Faça login para continuar.");
+        const allowed = (user.profile === "driver" && user.id === driverId)
+          || (user.profile === "student" && (await repo.studentDriverId(user.id)) === driverId);
+        if (!allowed) throw new ApiError(403, "Você não tem permissão para acessar estes dados.");
+        acceptance = await repo.termsAcceptance(driverId);
+      }
+      res.status(200)
+        .type("application/pdf")
+        .set("Content-Disposition", 'attachment; filename="termos-rotau.pdf"')
+        .set("Cache-Control", "private, no-store")
+        .send(termsPdf(acceptance));
+    } catch (error) { next(error); }
+  });
+
   // Cadastro: cria a conta com senha e já deixa o usuário logado
   app.post("/api/students", route(async (req, res) => {
     const data = body(req) as Record<string, unknown>;
@@ -140,6 +164,7 @@ export function createApp(
     const data = body(req) as Record<string, unknown>;
     const passwordHash = await hashPassword(validatePassword(data.password));
     const driver = await repo.createDriver({ ...data, passwordHash });
+    if (data.acceptTerms === true) await repo.acceptTerms(driver.id);
     await startSession(req, res, { profile: "driver", id: driver.id });
     return driver;
   }));
@@ -163,6 +188,12 @@ export function createApp(
     const driverId = id(req.params.id);
     requireUser(res, "driver", driverId);
     return repo.subscribe(driverId);
+  }, 200));
+  // Aceite digital dos termos de segurança e conduta
+  app.post("/api/drivers/:id/terms-acceptance", route((req, res) => {
+    const driverId = id(req.params.id);
+    requireUser(res, "driver", driverId);
+    return repo.acceptTerms(driverId);
   }, 200));
   // Motorista inicia a ida ou a volta do dia (avisa quem vai hoje)
   app.post("/api/drivers/:id/route-runs", route((req, res) => {

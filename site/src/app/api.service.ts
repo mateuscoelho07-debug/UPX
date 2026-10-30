@@ -134,7 +134,10 @@ export type StudentToday = {
   legs: TodayLeg[];
 };
 
-export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription };
+export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription; terms: DriverTerms };
+
+export type DriverTerms = { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean };
+export type TermsDocument = { version: string; updatedAt: string; intro: string; sections: { title: string; paragraphs: string[]; bullets?: string[] }[] };
 
 export type Session = { profile: "student" | "driver" | "admin"; id: number; name: string };
 
@@ -165,6 +168,7 @@ export type DriverSignup = {
   returnTime: string;
   cities: string;
   colleges: string;
+  acceptTerms?: boolean;
 };
 
 // Erro da API com o status HTTP (401 = precisa fazer login)
@@ -211,6 +215,8 @@ export class ApiService {
   student = (id: number) => this.request<Student>("GET", `/students/${id}`);
   createDriver = (data: DriverSignup) => this.request<Driver>("POST", "/drivers", data);
   driverDashboard = (id: number) => this.request<DriverDashboardData>("GET", `/drivers/${id}/dashboard`);
+  terms = () => this.request<TermsDocument>("GET", "/terms");
+  acceptTerms = (id: number) => this.request<unknown>("POST", `/drivers/${id}/terms-acceptance`);
   subscribe = (id: number) => this.request<Subscription>("POST", `/drivers/${id}/subscription`);
   startRoute = (id: number, leg: Leg) => this.request<DriverToday>("POST", `/drivers/${id}/route-runs`, { leg });
   vans = () => this.request<Van[]>("GET", "/vans");

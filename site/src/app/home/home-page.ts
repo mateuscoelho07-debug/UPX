@@ -124,6 +124,7 @@ export default class HomePage {
             returnTime: field("returnTime"),
             cities: field("cities"),
             colleges: field("colleges"),
+            acceptTerms: true, // o checkbox do formulário é obrigatório
           });
       this.session.set({ profile, id: created.id, name: created.name });
       this.registered.set(true);
