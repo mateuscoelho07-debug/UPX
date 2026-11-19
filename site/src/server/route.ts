@@ -11,8 +11,15 @@ export const STOP_MINUTES = 2; // tempo parado em cada embarque
 export const UNKNOWN_LEG_MINUTES = 6; // trecho com endereço que não conseguimos localizar
 
 export type Stop = { id: number; point: Point | null };
-export type PlannedStop = { id: number; order: number; minutes: number };
-export type RoutePlan = { stops: PlannedStop[]; totalMinutes: number; distanceKm: number };
+// `minutes` = desde a saída da van; `legMinutes`/`legKm` = só o trecho desde o ponto anterior (saída ou aluno anterior)
+export type PlannedStop = { id: number; order: number; minutes: number; legMinutes: number; legKm: number };
+// `end` = último trecho, do último aluno até o destino final (faculdade na ida); nulo quando não há destino
+export type RoutePlan = {
+  stops: PlannedStop[];
+  totalMinutes: number;
+  distanceKm: number;
+  end: { minutes: number; km: number } | null;
+};
 
 export function haversineKm(a: Point, b: Point): number {
   const rad = Math.PI / 180;
@@ -83,20 +90,33 @@ export function planRoute(origin: Point | null, stops: Stop[], end: Point | null
   let minutes = 0;
   let km = 0;
   let previous: Point | null = origin;
+  const round1 = (value: number) => Math.round(value * 10) / 10;
   for (const [index, stop] of sequence.entries()) {
+    let legMinutes = UNKNOWN_LEG_MINUTES;
+    let legKm = 0;
     if (previous && stop.point) {
-      minutes += travelMinutes(previous, stop.point);
-      km += roadKm(previous, stop.point);
-    } else {
-      minutes += UNKNOWN_LEG_MINUTES;
+      legMinutes = travelMinutes(previous, stop.point);
+      legKm = roadKm(previous, stop.point);
     }
-    planned.push({ id: stop.id, order: index + 1, minutes: Math.round(minutes) });
+    minutes += legMinutes;
+    km += legKm;
+    planned.push({
+      id: stop.id,
+      order: index + 1,
+      minutes: Math.round(minutes),
+      legMinutes: Math.round(legMinutes),
+      legKm: round1(legKm),
+    });
     minutes += STOP_MINUTES;
     previous = stop.point ?? previous;
   }
+  let last: RoutePlan["end"] = null;
   if (end && previous) {
-    minutes += travelMinutes(previous, end);
-    km += roadKm(previous, end);
+    const endMinutes = travelMinutes(previous, end);
+    const endKm = roadKm(previous, end);
+    minutes += endMinutes;
+    km += endKm;
+    last = { minutes: Math.round(endMinutes), km: round1(endKm) };
   }
-  return { stops: planned, totalMinutes: Math.round(minutes), distanceKm: Math.round(km * 10) / 10 };
+  return { stops: planned, totalMinutes: Math.round(minutes), distanceKm: round1(km), end: last };
 }

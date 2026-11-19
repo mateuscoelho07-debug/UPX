@@ -72,7 +72,10 @@
     <div class="mt-12 max-w-2xl">
       <span class="section-tag">Rotas para você</span>
       <h2 class="mt-4 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Vans disponíveis</h2>
-      <p class="mt-2 text-slate-600">Encontramos motoristas com rotas próximas ao seu endereço e à sua faculdade.</p>
+      <p class="mt-2 text-slate-600">
+        Motoristas que atendem a sua faculdade. Em destaque, a van com a <strong>chegada mais rápida</strong>: a que
+        chega antes na sua casa e te deixa em casa mais cedo, já contando os outros alunos da rota.
+      </p>
     </div>
 
     @if (student(); as current) {
@@ -113,17 +116,30 @@
       @for (van of vans(); track van.id; let index = $index) {
         <article
           class="relative flex flex-col rounded-3xl border bg-white p-6 shadow-xl shadow-blue-900/5 transition hover:-translate-y-1 hover:border-blue-200"
-          [class]="van.booked ? 'border-emerald-300' : 'border-slate-200'"
+          [class]="
+            van.fastest
+              ? 'border-blue-500 ring-4 ring-blue-100'
+              : van.booked
+                ? 'border-emerald-300'
+                : 'border-slate-200'
+          "
         >
           <div class="flex items-start justify-between gap-4">
             <span class="grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600"
               ><app-icon name="van" class="size-5"
             /></span>
-            @if (van.booked) {
-              <span class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Sua van</span>
-            } @else if (index === 0 && !currentVan()) {
-              <span class="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>
-            }
+            <span class="flex flex-wrap justify-end gap-2">
+              @if (van.fastest) {
+                <span class="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
+                  >Chegada mais rápida</span
+                >
+              }
+              @if (van.booked) {
+                <span class="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">Sua van</span>
+              } @else if (index === 0 && !currentVan() && !van.fastest && !hasEstimates()) {
+                <span class="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-bold text-white">Melhor opção</span>
+              }
+            </span>
           </div>
           <h3 class="mt-5 text-lg font-extrabold text-slate-950">
             <a
@@ -142,6 +158,28 @@
               <app-icon name="clock" class="size-5 text-blue-600" />Ida às {{ van.time
               }}{{ van.returnTime ? " · volta às " + van.returnTime : "" }}
             </p>
+            @if (van.estimate; as estimate) {
+              <dl class="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-3 text-center">
+                <div>
+                  <dt class="text-[11px] font-bold uppercase leading-4 text-slate-500">Entrada na van</dt>
+                  <dd class="mt-1 text-base font-extrabold text-slate-950">~{{ estimate.pickup }}</dd>
+                </div>
+                <div>
+                  <dt class="text-[11px] font-bold uppercase leading-4 text-slate-500">Chegada na faculdade</dt>
+                  <dd class="mt-1 text-base font-extrabold text-slate-950">~{{ estimate.collegeArrival }}</dd>
+                </div>
+                <div>
+                  <dt class="text-[11px] font-bold uppercase leading-4 text-slate-500">Chegada em casa</dt>
+                  <dd class="mt-1 text-base font-extrabold text-slate-950">
+                    {{ estimate.homeArrival ? "~" + estimate.homeArrival : "—" }}
+                  </dd>
+                </div>
+              </dl>
+              <p class="text-xs text-slate-500">
+                A van chega na sua casa {{ estimate.pickupMinutes }} min depois de sair e, na volta, você chega em casa
+                {{ estimate.homeMinutes }} min depois de sair da faculdade.
+              </p>
+            }
           </div>
           <div class="mb-5 flex items-center justify-between text-sm">
             <span class="font-bold" [class]="van.freeSeats > 0 ? 'text-emerald-700' : 'text-red-600'">{{

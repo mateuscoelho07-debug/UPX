@@ -15,6 +15,7 @@ type Profile = "student" | "driver";
   imports: [Field, Icon, Logo],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./home-page.html",
+  host: { "(document:keydown.escape)": "modalOpen.set(false)" },
 })
 export default class HomePage {
   private readonly api = inject(ApiService);
@@ -85,6 +86,17 @@ export default class HomePage {
     this.modalOpen.set(true);
   }
 
+  // Clique no fundo escuro (fora da janela) fecha o cadastro/login. Só vale se o clique também começou
+  // no fundo: arrastar para selecionar o texto de um campo e soltar fora não fecha.
+  private pressedBackdrop = false;
+  pressBackdrop(event: MouseEvent) {
+    this.pressedBackdrop = event.target === event.currentTarget;
+  }
+  closeOnBackdrop(event: MouseEvent) {
+    if (this.pressedBackdrop && event.target === event.currentTarget) this.modalOpen.set(false);
+    this.pressedBackdrop = false;
+  }
+
   switchMode(modalMode: "signup" | "login") {
     this.mode.set(modalMode);
     this.signupError.set(null);
@@ -143,6 +155,7 @@ export default class HomePage {
               capacity: Number(field("capacity")),
               departureTime: field("departureTime"),
               returnTime: field("returnTime"),
+              startAddress: field("startAddress"),
               cities: field("cities"),
               colleges: field("colleges"),
               acceptTerms: true, // o checkbox do formulário é obrigatório

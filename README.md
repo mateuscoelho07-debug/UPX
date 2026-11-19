@@ -16,7 +16,8 @@ O **RotaU** conecta estudantes universitários a motoristas de vans na região d
 .
 ├── .github/workflows/ci.yml   # verificação automática (formatação, tipos, testes e build)
 ├── docs/
-│   └── PUBLICAR.md            # guia de publicação (Vercel + Turso) e explicação dos recursos
+│   ├── PUBLICAR.md            # guia de publicação (Vercel + Turso) e explicação dos recursos
+│   └── DEMO_USUARIOS.md       # contas de demonstração (motoristas e alunos) com as senhas
 └── site/                      # projeto Angular (front end + API)
     ├── api/index.js           # função da Vercel que chama o servidor do Angular
     ├── public/                # logo e ícone
@@ -39,7 +40,7 @@ O **RotaU** conecta estudantes universitários a motoristas de vans na região d
     │   │   ├── subscription.ts # assinatura mensal do motorista
     │   │   ├── terms.ts, pdf.ts # texto dos termos e geração do PDF
     │   │   ├── documents.ts   # validação da CNH e do CRLV enviados
-    │   │   ├── demo.ts        # alunos fictícios de demonstração
+    │   │   ├── demo.ts        # contas de demonstração: 9 motoristas (MotoUpx e outros) e 45 alunos
     │   │   ├── time.ts        # datas e horários no fuso de Brasília
     │   │   └── *.test.ts      # testes da API
     │   ├── shared/            # código usado pelo front end e pela API (lista de faculdades)
@@ -69,7 +70,7 @@ pnpm dev        # site + API juntos em http://localhost:8443
 | `pnpm typecheck` | Verificação de tipos do site e da API |
 | `pnpm format` / `pnpm format:check` | Formata o código / confere a formatação (Prettier) |
 
-O banco é criado automaticamente em `site/data/rotau.db` na primeira execução, já com as faculdades e contas de exemplo. Para começar do zero, apague esse arquivo. As contas de exemplo usam a senha `rotau1234` (por exemplo, motorista `carlos@rotau.com` ou estudante `mariana@email.com`).
+O banco é criado automaticamente em `site/data/rotau.db` na primeira execução, já com as faculdades e as contas de demonstração. Para começar do zero, apague esse arquivo. As contas de demonstração usam a senha `rotau1234` (por exemplo, motorista `motoupx@rotau.test` ou estudante `estudanteupx@rotau.test`); a lista completa está em [`docs/DEMO_USUARIOS.md`](docs/DEMO_USUARIOS.md).
 
 ## Variáveis de ambiente
 
@@ -81,9 +82,7 @@ Todas são opcionais no computador. Em produção, veja o [guia de publicação]
 | `DB_PATH` | Outro arquivo de banco local |
 | `PORT` | Porta do servidor de produção (padrão 3001) |
 | `ADMIN_PASSWORD` | Senha do painel `/admin` (o nome antigo `ADMIN_TOKEN` também funciona); sem ela o painel fica desativado |
-| `SEED=false` | Não cria as contas de exemplo (as faculdades são criadas sempre) |
-| `DEMO_VANS=false` | Apaga e deixa de criar as 11 vans fictícias de demonstração e seus alunos |
-| `CORINGA_DRIVERS` | Motoristas reais que recebem 3 alunos fictícios (nomes ou e-mails separados por vírgula; `off` desliga) |
+| `DEMO_VANS=false` | Apaga e deixa de criar as contas de demonstração (9 motoristas e 45 alunos, ver [`docs/DEMO_USUARIOS.md`](docs/DEMO_USUARIOS.md)) |
 | `GEOCODE=false` | Não consulta o OpenStreetMap para localizar endereços |
 | `SUBSCRIPTION=off` | Desliga a assinatura mensal do motorista |
 | `SUBSCRIPTION_PRICE`, `SUBSCRIPTION_DAYS` | Valor e duração da assinatura (padrão R$ 29,90 por 30 dias) |
@@ -98,16 +97,17 @@ O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema
 | --- | --- |
 | `colleges` | Faculdades da região de Sorocaba (UniFacens, Fatec, Ufscar, Uniso, Unip, Unesp, IFSP, PUC-SP, Anhanguera, ESAMC, Fadi, Ceunsp) e as que os motoristas cadastrarem |
 | `students` | Estudantes: nome, celular, e-mail, endereço, faculdade e hash da senha |
-| `drivers` | Motoristas e vans: modelo, placa, lugares, horário de saída, nota e hash da senha |
+| `drivers` | Motoristas e vans: modelo, placa, lugares, horários de ida e volta, endereço de saída da van (casa do motorista), nota e hash da senha |
 | `driver_cities` | Cidades por onde cada motorista passa, na ordem da rota |
 | `driver_colleges` | Faculdades que cada motorista atende |
 | `bookings` | Reservas de vaga (estudante ↔ van), com status `Aguardando`, `Confirmado` ou `Cancelado` |
 | `searches` | Buscas feitas na página inicial, para medir a demanda |
 | `sessions` | Sessões de login abertas (só o hash do token, com data de expiração) |
 | `attendance` | Presença do dia: se o estudante vai ou não vai (uma resposta por estudante por dia, no horário de Brasília) |
-| `route_runs` | Quando o motorista iniciou a ida ou a volta de cada dia |
+| `route_runs` | Quando o motorista iniciou e finalizou a ida ou a volta de cada dia |
 | `notifications` | Avisos do sino do painel, para estudantes e motoristas |
 | `driver_documents` | CNH e CRLV enviados pelo motorista (só ele acessa os arquivos) |
+| `data_migrations` | Ajustes de dados que já rodaram uma vez (ex.: a limpeza que apagou os motoristas antigos em 2026-11) |
 
 ## Login e segurança
 
@@ -115,7 +115,7 @@ O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema
 - A sessão fica num cookie `rotau_session` **httpOnly** e `SameSite=Lax`, válido por 30 dias. O banco guarda só o hash do token, então "Sair" encerra a sessão de verdade.
 - Cada usuário só acessa os próprios dados: o estudante vê e reserva só para si, e o motorista só vê o próprio painel e só confirma ou recusa reservas da própria van.
 - Requisições que alteram dados precisam ser JSON (bloqueia formulários de outros sites) e o login trava por 15 minutos depois de 10 tentativas erradas.
-- Em produção, atrás de HTTPS: defina `TRUST_PROXY=1` (se houver um proxy na frente, como na maioria das hospedagens) ou `COOKIE_SECURE=true`, para o cookie sair com a flag `Secure`. Use também `SEED=false` para não criar as contas de exemplo (as faculdades continuam sendo criadas).
+- Em produção, atrás de HTTPS: defina `TRUST_PROXY=1` (se houver um proxy na frente, como na maioria das hospedagens) ou `COOKIE_SECURE=true`, para o cookie sair com a flag `Secure`. As contas de demonstração têm senha pública: quando não forem mais necessárias, use `DEMO_VANS=false`.
 
 ## API
 
@@ -128,6 +128,7 @@ O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema
 | GET | `/api/students/:id` | Dados do estudante (só o próprio) |
 | POST | `/api/drivers` | Cadastro de motorista (já deixa logado) |
 | GET | `/api/drivers/:id` | Dados do motorista (só o próprio) |
+| PATCH | `/api/drivers/:id` | "Meu perfil": altera telefone, van, horários, cidades e endereço de saída |
 | GET | `/api/drivers/:id/dashboard` | Painel do motorista: passageiros, presença e rota do dia |
 | GET, POST | `/api/drivers/:id/subscription` | Consulta e paga (simulado) a assinatura mensal |
 | GET | `/api/drivers/:id/documents` | Lista a CNH e o CRLV enviados |
@@ -135,11 +136,12 @@ O esquema completo está em [`site/src/server/schema.ts`](site/src/server/schema
 | GET | `/api/drivers/:id/documents/:kind/file` | Baixa o arquivo (só o próprio motorista) |
 | POST | `/api/drivers/:id/terms-acceptance` | Aceite digital dos termos pelo motorista |
 | POST | `/api/drivers/:id/route-runs` | Inicia a `ida` ou a `volta` do dia e avisa quem vai |
+| POST | `/api/drivers/:id/route-runs/finish` | Finaliza a viagem (chegou na faculdade): zera a presença e os alunos respondem de novo |
 | GET | `/api/terms`, `/api/terms.pdf` | Texto dos termos e o PDF (com `?driverId=` traz o aceite do motorista) |
 | POST | `/api/auth/login`, `/api/auth/logout` | Entrar e sair |
 | GET | `/api/auth/me` | Usuário logado |
 | POST | `/api/account/delete` | Exclui a própria conta (pede a senha) |
-| GET | `/api/vans` | Vans que atendem a faculdade do estudante |
+| GET | `/api/vans` | Vans que atendem a faculdade do estudante, com a previsão de entrada na van e chegada em casa e a mais rápida em destaque |
 | GET | `/api/vans/:id` | Página da van (o telefone só aparece após reservar) |
 | POST | `/api/bookings` | Reserva uma vaga; com outra reserva ativa dá 409, a menos que envie `replace: true` |
 | POST | `/api/bookings/:id/cancel` | Estudante cancela a própria reserva |

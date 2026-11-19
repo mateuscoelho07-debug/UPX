@@ -2,7 +2,7 @@
 // tanto no `pnpm dev` quanto na Vercel.
 import express, { type ErrorRequestHandler, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { ApiError, DEMO_VAN_DOMAIN, openDatabase, type Repository } from "./db.ts";
+import { ApiError, isDemoEmail, openDatabase, type Repository } from "./db.ts";
 import { documentKind, MAX_DOCUMENT_JSON, readUpload } from "./documents.ts";
 import { termsDocument, termsPdf } from "./terms.ts";
 import {
@@ -171,12 +171,7 @@ export function createApp(
     "/api/students",
     route(async (req, res) => {
       const data = body(req) as Record<string, unknown>;
-      if (
-        String(data.email ?? "")
-          .toLowerCase()
-          .endsWith(`@${DEMO_VAN_DOMAIN}`)
-      )
-        throw new ApiError(400, "Use um e-mail real para criar a conta.");
+      if (isDemoEmail(String(data.email ?? ""))) throw new ApiError(400, "Use um e-mail real para criar a conta.");
       const passwordHash = await hashPassword(validatePassword(data.password));
       const student = await repo.createStudent({ ...data, passwordHash });
       await repo.locateStudent(student.id);
@@ -197,9 +192,15 @@ export function createApp(
     "/api/drivers",
     route(async (req, res) => {
       const data = body(req) as Record<string, unknown>;
+      if (isDemoEmail(String(data.email ?? ""))) throw new ApiError(400, "Use um e-mail real para criar a conta.");
+      // endereço de saída da van (casa do motorista): a rota da ida começa nele
+      if (typeof data.startAddress !== "string" || !data.startAddress.trim())
+        throw new ApiError(400, 'O campo "startAddress" é obrigatório.');
       const passwordHash = await hashPassword(validatePassword(data.password));
-      const driver = await repo.createDriver({ ...data, passwordHash });
-      if (data.acceptTerms === true) await repo.acceptTerms(driver.id);
+      const created = await repo.createDriver({ ...data, passwordHash });
+      if (data.acceptTerms === true) await repo.acceptTerms(created.id);
+      await repo.locateDriver(created.id);
+      const driver = await repo.getDriver(created.id);
       await startSession(req, res, { profile: "driver", id: driver.id });
       return driver;
     }),
@@ -210,6 +211,17 @@ export function createApp(
       const driverId = id(req.params.id);
       requireUser(res, "driver", driverId);
       return repo.getDriver(driverId);
+    }),
+  );
+  // "Meu perfil": o motorista altera alguns dados do cadastro (telefone, van, horários, cidades e endereço de saída)
+  app.patch(
+    "/api/drivers/:id",
+    route(async (req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      const driver = await repo.updateDriverProfile(driverId, body(req));
+      await repo.locateDriver(driverId);
+      return driver;
     }),
   );
   app.get(
@@ -299,6 +311,15 @@ export function createApp(
       requireUser(res, "driver", driverId);
       return repo.startRoute(driverId, body(req).leg);
     }),
+  );
+  // Motorista finaliza a viagem (chegou na faculdade): os alunos voltam a responder se vão
+  app.post(
+    "/api/drivers/:id/route-runs/finish",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.finishRoute(driverId, body(req).leg);
+    }, 200),
   );
 
   // Presença do dia: o estudante logado vê e diz se vai hoje

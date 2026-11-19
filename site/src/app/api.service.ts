@@ -28,6 +28,7 @@ export type Driver = {
   capacity: number;
   departureTime: string;
   returnTime: string | null;
+  startAddress: string | null; // endereço de saída da van (casa do motorista)
   rating: number;
   occupied: number;
   freeSeats: number;
@@ -64,6 +65,17 @@ export type Van = {
   rating: number;
   booked: boolean;
   documentsSent: boolean;
+  estimate: VanEstimate | null;
+  fastest: boolean; // chegada mais rápida para o estudante logado
+};
+
+// Previsão para o estudante nesta van, já contando os outros alunos dela
+export type VanEstimate = {
+  pickup: string; // a van chega na casa dele (entrada na van)
+  collegeArrival: string;
+  homeArrival: string | null; // chegada em casa na volta
+  pickupMinutes: number; // da saída da van até a casa dele
+  homeMinutes: number; // da faculdade até a casa dele
 };
 
 export type VanDetail = {
@@ -106,15 +118,27 @@ export type TodayLeg = {
   leg: Leg;
   scheduled: string | null;
   startedAt: string | null;
+  finishedAt?: string | null; // o motorista finalizou a viagem
   eta: string | null;
   predicted: boolean;
   rideMinutes?: number | null;
 };
 
 // Rota calculada pelos endereços de quem vai hoje
-export type RouteStop = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
+// `legMinutes`/`legKm`: trecho desde o ponto anterior (saída da van ou aluno anterior)
+export type RouteStop = {
+  studentId: number;
+  name: string;
+  pickup: string;
+  order: number;
+  eta: string | null;
+  legMinutes: number;
+  legKm: number;
+};
 export type LegRoute = {
+  origin: string | null; // casa do motorista na ida, faculdade na volta
   destination: string | null;
+  end: { minutes: number; km: number } | null; // último aluno -> faculdade (ida)
   totalMinutes: number;
   distanceKm: number;
   arrival: string | null;
@@ -204,9 +228,20 @@ export type DriverSignup = {
   capacity: number;
   departureTime: string;
   returnTime: string;
+  startAddress: string;
   cities: string;
   colleges: string;
   acceptTerms?: boolean;
+};
+
+// Campos que o motorista pode alterar em "Meu perfil"
+export type DriverProfileUpdate = {
+  phone: string;
+  vanModel: string;
+  startAddress: string;
+  departureTime: string;
+  returnTime: string;
+  cities: string;
 };
 
 // Erro da API com o status HTTP (401 = precisa fazer login)
@@ -263,7 +298,10 @@ export class ApiService {
   terms = () => this.request<TermsDocument>("GET", "/terms");
   acceptTerms = (id: number) => this.request<unknown>("POST", `/drivers/${id}/terms-acceptance`);
   subscribe = (id: number) => this.request<Subscription>("POST", `/drivers/${id}/subscription`);
+  updateDriver = (id: number, data: DriverProfileUpdate) => this.request<Driver>("PATCH", `/drivers/${id}`, data);
   startRoute = (id: number, leg: Leg) => this.request<DriverToday>("POST", `/drivers/${id}/route-runs`, { leg });
+  finishRoute = (id: number, leg: Leg) =>
+    this.request<DriverToday>("POST", `/drivers/${id}/route-runs/finish`, { leg });
   vans = () => this.request<Van[]>("GET", "/vans");
   vanDetail = (id: number) => this.request<VanDetail>("GET", `/vans/${id}`);
   // replace: troca a van atual por esta (cada estudante fica em uma van só)

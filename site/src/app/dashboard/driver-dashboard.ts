@@ -11,16 +11,29 @@ import { firstName } from "../shared/format";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
 import { DeleteAccount } from "./delete-account";
+import { CopyText } from "../shared/copy-text";
 import { DocumentsCard } from "./documents-card";
+import { DriverProfileCard } from "./driver-profile-card";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
 import { SubscriptionCard } from "./subscription-card";
 import { TermsCard } from "./terms-card";
 
-// Painel do motorista: quem vai hoje, rota do dia e botões para iniciar a ida e a volta
+// Painel do motorista. No topo: iniciar/finalizar a ida e a volta, quem vai hoje e a rota calculada.
+// Embaixo: meu perfil, assinatura, documentos e termos.
 @Component({
   selector: "app-driver-dashboard",
-  imports: [DashboardHeader, DeleteAccount, Icon, StatusMessage, SubscriptionCard, TermsCard, DocumentsCard],
+  imports: [
+    CopyText,
+    DashboardHeader,
+    DeleteAccount,
+    DocumentsCard,
+    DriverProfileCard,
+    Icon,
+    StatusMessage,
+    SubscriptionCard,
+    TermsCard,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: "./driver-dashboard.html",
 })
@@ -34,6 +47,7 @@ export class DriverDashboard implements OnInit {
   readonly error = signal<string | null>(null);
   readonly loading = signal(true);
   readonly actionError = signal<string | null>(null);
+  readonly busyLeg = signal<Leg | null>(null);
 
   ngOnInit() {
     this.load();
@@ -85,13 +99,29 @@ export class DriverDashboard implements OnInit {
   }
 
   // Inicia a viagem: quem vai hoje recebe o aviso com a previsão de chegada
-  async start(leg: Leg) {
+  start(leg: Leg) {
+    return this.legAction(leg, () => this.api.startRoute(this.driverId(), leg));
+  }
+
+  // Finaliza a viagem (chegou na faculdade): os alunos voltam a responder "Vou" / "Não vou"
+  finish(leg: Leg) {
+    return this.legAction(leg, () => this.api.finishRoute(this.driverId(), leg));
+  }
+
+  private async legAction(leg: Leg, action: () => Promise<unknown>) {
     this.actionError.set(null);
+    this.busyLeg.set(leg);
     try {
-      await this.api.startRoute(this.driverId(), leg);
+      await action();
       this.refresh();
     } catch (err) {
       this.handleError(err as Error, this.actionError);
+    } finally {
+      this.busyLeg.set(null);
     }
+  }
+
+  scrollToProfile() {
+    document.getElementById("perfil")?.scrollIntoView({ behavior: "smooth" });
   }
 }

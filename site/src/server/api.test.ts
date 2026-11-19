@@ -7,7 +7,8 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createApp } from "./api.ts";
 import { defaultColleges } from "../shared/colleges.ts";
-import { DEMO_PASSWORD, DEMO_VAN_DOMAIN, openDatabase } from "./db.ts";
+import { DEMO_DOMAIN, DEMO_PASSWORD, openDatabase } from "./db.ts";
+import { LEGACY_DEMO_DOMAIN } from "./demo.ts";
 
 let server: Server;
 let base: string;
@@ -56,6 +57,7 @@ const newDriver = {
   plate: "abc-1d23",
   capacity: 1,
   departureTime: "07:10",
+  startAddress: "Rua do Comércio, 1000 - Votorantim",
   cities: "Votorantim, Sorocaba",
   colleges: "Ufscar, Nova Faculdade",
 };
@@ -78,25 +80,48 @@ test("lista as faculdades da região", async () => {
 test("busca registra a pesquisa e conta as vans", async () => {
   const { status, body } = await call("POST", "/searches", { address: "Centro, Sorocaba", college: "UniFacens" });
   assert.equal(status, 201);
-  assert.equal(body.count, 13); // 2 contas de exemplo + 11 vans de demonstração
+  assert.equal(body.count, 9); // os 9 motoristas de demonstração
 });
 
-test("vans de demonstração atendem todas as faculdades e não aceitam login", async () => {
+test("contas de demonstração: 9 motoristas atendem todas as faculdades e entram com a senha de demonstração", async () => {
   for (const college of defaultColleges) {
     const { body } = await call("GET", `/vans?college=${college}`);
-    const demo = body.filter((van: { driver: string }) => van.driver.endsWith("(demo)"));
-    assert.equal(demo.length, 11, college);
+    assert.equal(body.length, 9, college);
   }
   const { body } = await call("GET", "/vans?college=UniFacens");
-  assert.ok(body.some((van: { route: string }) => van.route === "Sorocaba (Centro) → UniFacens"));
-  for (const password of [DEMO_PASSWORD, "qualquer-senha"]) {
-    const login = await call("POST", "/auth/login", {
-      profile: "driver",
-      email: `van-centro@${DEMO_VAN_DOMAIN}`,
-      password,
-    });
-    assert.equal(login.status, 401);
-  }
+  assert.ok(body.some((van: { driver: string }) => van.driver === "MotoUpx"));
+
+  const moto = browser();
+  const login = await moto.call("POST", "/auth/login", {
+    profile: "driver",
+    email: `motoupx@${DEMO_DOMAIN}`,
+    password: DEMO_PASSWORD,
+  });
+  assert.equal(login.status, 200);
+  const painel = (await moto.call("GET", `/drivers/${login.body.id}/dashboard`)).body;
+  assert.equal(painel.driver.startAddress, "Avenida Paraná, 4495 - Sorocaba");
+  assert.equal(painel.passengers.length, 5);
+  assert.ok(painel.passengers.some((p: { name: string }) => p.name === "EstudanteUpx"));
+  assert.equal(painel.terms.accepted, true);
+  assert.equal(painel.subscription.active, true);
+  const errada = await call("POST", "/auth/login", {
+    profile: "driver",
+    email: `motoupx@${DEMO_DOMAIN}`,
+    password: "qualquer-senha",
+  });
+  assert.equal(errada.status, 401);
+
+  const aluno = browser();
+  const entrou = await aluno.call("POST", "/auth/login", {
+    profile: "student",
+    email: `estudanteupx@${DEMO_DOMAIN}`,
+    password: DEMO_PASSWORD,
+  });
+  assert.equal(entrou.status, 200);
+  const hoje = (await aluno.call("GET", "/attendance/today")).body;
+  assert.equal(hoje.van.driver, "MotoUpx");
+  assert.equal(hoje.van.status, "Confirmado");
+  assert.equal(hoje.going, null); // o EstudanteUpx responde sozinho; os outros alunos de demonstração vão todo dia
 });
 
 test("cadastro exige senha de pelo menos 8 caracteres", async () => {
@@ -186,7 +211,7 @@ test("cada usuário só acessa os próprios dados", async () => {
   const carlos = browser();
   const login = await carlos.call("POST", "/auth/login", {
     profile: "driver",
-    email: "carlos@rotau.com",
+    email: `motoupx@${DEMO_DOMAIN}`,
     password: DEMO_PASSWORD,
   });
   assert.equal(login.status, 200);
@@ -195,7 +220,7 @@ test("cada usuário só acessa os próprios dados", async () => {
   const mariana = browser();
   const marianaLogin = await mariana.call("POST", "/auth/login", {
     profile: "student",
-    email: "mariana@email.com",
+    email: `estudanteupx@${DEMO_DOMAIN}`,
     password: DEMO_PASSWORD,
   });
   assert.equal(marianaLogin.status, 200);
@@ -204,16 +229,17 @@ test("cada usuário só acessa os próprios dados", async () => {
   const fernanda = browser();
   await fernanda.call("POST", "/auth/login", {
     profile: "driver",
-    email: "fernanda@rotau.com",
+    email: `motorista2@${DEMO_DOMAIN}`,
     password: DEMO_PASSWORD,
   });
+  assert.equal((await fernanda.call("PATCH", `/drivers/${carlosId}`, { phone: "1" })).status, 403);
   assert.equal((await fernanda.call("GET", `/drivers/${carlosId}/dashboard`)).status, 403);
   assert.equal((await fernanda.call("GET", `/drivers/${carlosId}`)).status, 403);
   assert.equal((await call("GET", `/drivers/${carlosId}/dashboard`)).status, 401);
 
   // nem confirma reservas da van de outro motorista
   const passengers = (await carlos.call("GET", `/drivers/${carlosId}/dashboard`)).body.passengers;
-  const waiting = passengers.find((p: { status: string }) => p.status === "Aguardando");
+  const waiting = passengers[0];
   assert.equal((await fernanda.call("PATCH", `/bookings/${waiting.bookingId}`, { status: "Cancelado" })).status, 403);
   assert.equal((await call("PATCH", `/bookings/${waiting.bookingId}`, { status: "Cancelado" })).status, 401);
 
@@ -237,14 +263,19 @@ test("bloqueia login depois de muitas tentativas erradas", async () => {
   const b = browser();
   for (let i = 0; i < 10; i++) {
     assert.equal(
-      (await b.call("POST", "/auth/login", { profile: "driver", email: "roberto@rotau.com", password: "chute-errado" }))
-        .status,
+      (
+        await b.call("POST", "/auth/login", {
+          profile: "driver",
+          email: `motorista3@${DEMO_DOMAIN}`,
+          password: "chute-errado",
+        })
+      ).status,
       401,
     );
   }
   const blocked = await b.call("POST", "/auth/login", {
     profile: "driver",
-    email: "roberto@rotau.com",
+    email: `motorista3@${DEMO_DOMAIN}`,
     password: DEMO_PASSWORD,
   });
   assert.equal(blocked.status, 429);
@@ -271,7 +302,7 @@ test("painel de administração exige a senha de administrador", async () => {
   const student = browser();
   await student.call("POST", "/auth/login", {
     profile: "student",
-    email: "mariana@email.com",
+    email: `estudanteupx@${DEMO_DOMAIN}`,
     password: DEMO_PASSWORD,
   });
   assert.equal((await student.call("GET", "/admin/overview")).status, 403);
@@ -286,11 +317,14 @@ test("painel de administração exige a senha de administrador", async () => {
   }
   assert.ok(
     body.drivers.some(
-      (d: { name: string; cities: string }) => d.name === "Carlos Eduardo" && d.cities === "Centro, Sorocaba",
+      (d: { name: string; cities: string; startAddress: string }) =>
+        d.name === "MotoUpx" &&
+        d.cities === "Sorocaba (Zona Norte), Sorocaba" &&
+        d.startAddress === "Avenida Paraná, 4495 - Sorocaba",
     ),
   );
   assert.ok(!JSON.stringify(body).includes("scrypt"), "não expõe hashes de senha");
-  assert.ok(body.bookings.length >= 4);
+  assert.ok(body.bookings.length >= 45);
   assert.ok(body.searches.length >= 1);
 });
 
@@ -308,32 +342,34 @@ test("sem ADMIN_PASSWORD o painel fica desativado", async () => {
   app.close();
 });
 
-test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo", async () => {
-  process.env.SEED = "false";
-  let repo;
-  try {
-    repo = await openDatabase(":memory:");
-  } finally {
-    delete process.env.SEED;
-  }
+test("contas de demonstração: criadas uma vez, cada aluno na sua van, e DEMO_VANS=false apaga", async () => {
+  const repo = await openDatabase(":memory:");
   await repo.ensureColleges(); // rodar de novo não duplica
   const colleges = await repo.listColleges();
   assert.deepEqual(colleges.map((c) => c.name).sort(), [...defaultColleges].sort());
   const overview = await repo.adminOverview();
-  // só as contas de demonstração (vans e alunos), mesmo com SEED=false; nenhuma tem senha
-  assert.equal(overview.students.length, 55);
-  assert.ok(
-    overview.students.every(
-      (s) => String(s.email).endsWith(`@${DEMO_VAN_DOMAIN}`) && String(s.name).endsWith("(demo)"),
-    ),
-  );
-  assert.equal(overview.drivers.length, 11);
-  assert.ok(overview.drivers.every((d) => String(d.email).endsWith(`@${DEMO_VAN_DOMAIN}`)));
+  assert.equal(overview.drivers.length, 9);
+  assert.equal(overview.students.length, 45);
+  assert.ok(overview.drivers.every((d) => String(d.email).endsWith(`@${DEMO_DOMAIN}`)));
   assert.ok(overview.drivers.every((d) => Number(d.occupied) === 5));
-  await repo.syncDemoVans(true); // idempotente: não repete alunos
-  assert.equal((await repo.adminOverview()).students.length, 55);
+  assert.ok(overview.drivers.every((d) => typeof d.startAddress === "string" && d.startAddress.length > 0));
+  assert.ok(overview.students.every((s) => String(s.email).endsWith(`@${DEMO_DOMAIN}`) && s.college === "UniFacens"));
+  await repo.syncDemo(true); // idempotente: não repete motoristas nem alunos
+  assert.equal((await repo.adminOverview()).students.length, 45);
 
-  // rodar de novo não duplica, e faculdades novas também passam a ser atendidas
+  // aluno de demonstração que cancelou a vaga volta para a van dele na próxima partida do servidor
+  const estudante = (await repo.findAccount("student", `estudanteupx@${DEMO_DOMAIN}`))!;
+  const van = (await repo.studentToday(estudante.id)).van!;
+  assert.equal(van.driver, "MotoUpx");
+  const ativa = (await repo.adminOverview()).bookings.find(
+    (b) => b.student === "EstudanteUpx" && b.status === "Confirmado",
+  )!;
+  await repo.cancelBooking(estudante.id, Number(ativa.id));
+  assert.equal((await repo.studentToday(estudante.id)).van, null);
+  await repo.syncDemo(true);
+  assert.equal((await repo.studentToday(estudante.id)).van!.driverId, van.driverId);
+
+  // faculdades novas também passam a ser atendidas pelos motoristas de demonstração
   await repo.createDriver({
     name: "Real",
     phone: "1",
@@ -344,17 +380,81 @@ test("com SEED=false o banco ganha as faculdades, mas não as contas de exemplo"
     colleges: "Faculdade Nova",
     passwordHash: "x",
   });
-  await repo.syncDemoVans(true);
-  assert.equal((await repo.listVans({ college: "Faculdade Nova" })).length, 12);
-  assert.equal((await repo.adminOverview()).drivers.length, 12);
+  await repo.syncDemo(true);
+  assert.equal((await repo.listVans({ college: "Faculdade Nova" })).length, 10);
 
-  // DEMO_VANS=false: as vans de demonstração somem, os motoristas reais ficam
-  await repo.syncDemoVans(false);
-  const left = (await repo.adminOverview()).drivers;
+  // DEMO_VANS=false: as contas de demonstração somem, os motoristas reais ficam
+  await repo.syncDemo(false);
+  const left = await repo.adminOverview();
   assert.deepEqual(
-    left.map((d) => d.email),
+    left.drivers.map((d) => d.email),
     ["real@teste.com"],
   );
+  assert.equal(left.students.length, 0);
+});
+
+test("limpeza única: apaga todos os motoristas antigos e os alunos fictícios antigos, uma vez só", async () => {
+  const { createClient } = await import("@libsql/client");
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const url = `file:${join(mkdtempSync(join(tmpdir(), "rotau-")), "limpeza.db")}`;
+  const first = await openDatabase(url);
+  const antigo = await first.createDriver({
+    name: "Motorista Antigo",
+    phone: "1",
+    email: "antigo@teste.com",
+    vanModel: "V",
+    plate: "ANT-1A00",
+    cities: "Itu",
+    colleges: "Fatec",
+  });
+  const aluno = await first.createStudent({
+    name: "Aluno Real",
+    phone: "1",
+    email: "real@aluno.com",
+    address: "Rua 1 - Itu",
+    college: "Fatec",
+    passwordHash: "x",
+  });
+  const reserva = await first.createBooking({ studentId: aluno.id, driverId: antigo.id });
+  await first.updateBooking(reserva.id, { status: "Confirmado" });
+
+  // simula um banco de antes: limpeza não feita e uma van antiga de demonstração com aluno fictício
+  const raw = createClient({ url });
+  await raw.execute("DELETE FROM data_migrations");
+  await raw.execute(
+    `INSERT INTO drivers (name, phone, email, van_model, plate) VALUES ('Van (demo)', '1', 'van-centro@${LEGACY_DEMO_DOMAIN}', 'V', 'DEM-0A01')`,
+  );
+  await raw.execute(
+    `INSERT INTO students (name, phone, email, address, college_id) VALUES ('Fictício (demo)', '1', 'aluno-centro-1@${LEGACY_DEMO_DOMAIN}', 'Rua', 1)`,
+  );
+  raw.close();
+
+  const reopened = await openDatabase(url);
+  const overview = await reopened.adminOverview();
+  assert.equal(overview.drivers.length, 9); // só os motoristas de demonstração novos
+  assert.ok(overview.drivers.every((d) => String(d.email).endsWith(`@${DEMO_DOMAIN}`)));
+  assert.ok(!overview.students.some((s) => String(s.email).endsWith(`@${LEGACY_DEMO_DOMAIN}`)));
+  assert.ok(overview.students.some((s) => s.email === "real@aluno.com")); // aluno de verdade continua
+  assert.equal((await reopened.studentToday(aluno.id)).van, null);
+  assert.equal(
+    (await reopened.notifications({ profile: "student", id: aluno.id })).items[0]!.title,
+    "Escolha sua van de novo",
+  );
+
+  // motorista cadastrado depois da limpeza não é apagado quando o servidor reinicia
+  const novo = await reopened.createDriver({
+    name: "Novo",
+    phone: "1",
+    email: "novo@teste.com",
+    vanModel: "V",
+    plate: "NOV-9Z00",
+    cities: "Itu",
+    colleges: "Fatec",
+  });
+  const again = await openDatabase(url);
+  assert.equal((await again.getDriver(novo.id)).name, "Novo");
 });
 
 test("presença do dia: estudante avisa se vai e motorista e estudante são notificados", async () => {
@@ -785,19 +885,19 @@ test("alunos de demonstração vão todo dia e a rota é calculada pelos endere�
   const repo = await openDatabase(":memory:");
   const now = new Date("2026-10-23T19:00:00Z"); // 16:00 em Brasília
   const vans = (await repo.adminOverview()).drivers;
-  const sul = vans.find((d) => d.email === `van-sul@${DEMO_VAN_DOMAIN}`)!;
+  const sul = vans.find((d) => d.email === `motorista3@${DEMO_DOMAIN}`)!;
   const painel = await repo.driverDashboard(Number(sul.id), now);
   assert.equal(painel.passengers.length, 5);
   assert.ok(painel.passengers.every((p) => p.going === true));
   const ida = painel.today.legs[0]!;
-  assert.equal(ida.scheduled, "17:45");
+  assert.equal(ida.scheduled, "17:35");
   assert.equal(ida.predicted, true);
   assert.equal(ida.route!.stops.length, 5);
   assert.deepEqual(
     ida.route!.stops.map((s) => s.order),
     [1, 2, 3, 4, 5],
   );
-  assert.ok(ida.route!.stops[0]!.eta! > "17:45");
+  assert.ok(ida.route!.stops[0]!.eta! > "17:35");
   const times = ida.route!.stops.map((s) => s.eta!);
   assert.deepEqual(times, [...times].sort()); // a previsão cresce ao longo da rota
   assert.ok(ida.route!.totalMinutes > 0 && ida.route!.distanceKm > 0);
@@ -827,8 +927,11 @@ test("alunos de demonstração vão todo dia e a rota é calculada pelos endere�
 });
 
 test("e-mail de demonstração não serve para criar conta de verdade", async () => {
-  const res = await call("POST", "/students", { ...newStudent, email: `fake@${DEMO_VAN_DOMAIN}` });
-  assert.equal(res.status, 400);
+  for (const domain of [DEMO_DOMAIN, LEGACY_DEMO_DOMAIN]) {
+    assert.equal((await call("POST", "/students", { ...newStudent, email: `fake@${domain}` })).status, 400);
+    const motorista = await call("POST", "/drivers", { ...newDriver, email: `fake@${domain}`, plate: "FAK-1E00" });
+    assert.equal(motorista.status, 400);
+  }
 });
 
 // Liga a cobrança só dentro de um teste
@@ -865,9 +968,9 @@ test("assinatura: van sem assinatura em dia some da busca e não recebe reservas
     // recém-criada: nunca assinou, então fica oculta (as vans de demonstração continuam visíveis)
     assert.equal(driver.subscriptionActive, false);
     assert.ok(!(await vansDe()).includes(driver.id));
-    // 11 vans de demonstração + 2 motoristas de exemplo (Carlos e Fernanda, com assinatura até 2099) atendem a Fatec
-    assert.equal((await vansDe()).length, 13);
-    assert.equal((await repo.searchRoutes({ address: "Itu", college: "Fatec" })).count, 13);
+    // os 9 motoristas de demonstração (nunca vencem) atendem a Fatec
+    assert.equal((await vansDe()).length, 9);
+    assert.equal((await repo.searchRoutes({ address: "Itu", college: "Fatec" })).count, 9);
     await assert.rejects(
       repo.createBooking({ studentId: student.id, driverId: driver.id }),
       /não está recebendo novas reservas/,
@@ -987,7 +1090,7 @@ test("assinatura: rotas da API, simulação e variáveis de ambiente", () =>
 
 test("o painel do motorista traz a rota calculada e o navegador não recebe as coordenadas", async () => {
   const repo = await openDatabase(":memory:");
-  const norte = (await repo.adminOverview()).drivers.find((d) => d.email === `van-norte@${DEMO_VAN_DOMAIN}`)!;
+  const norte = (await repo.adminOverview()).drivers.find((d) => d.email === `motorista2@${DEMO_DOMAIN}`)!;
   const { today, passengers } = await repo.driverDashboard(Number(norte.id), new Date("2026-10-24T19:00:00Z"));
   for (const leg of today.legs) {
     assert.equal(leg.route!.stops.length, 5);
@@ -996,99 +1099,142 @@ test("o painel do motorista traz a rota calculada e o navegador não recebe as c
   assert.ok(passengers.every((p) => !("point" in p) && !("mapsQuery" in p)));
 });
 
-test("alunos coringa: 3 na van do motorista escolhido, sempre indo, e saem com DEMO_VANS=false", async () => {
+test("ida sai da casa do motorista e a rota traz cada trecho; a volta sai da faculdade", async () => {
   const repo = await openDatabase(":memory:");
-  const mateus = await repo.createDriver({
-    name: "Mateus Coelho",
-    phone: "1",
-    email: "mateus@teste.com",
-    vanModel: "Van",
-    plate: "MAT-1A11",
-    capacity: 10,
-    departureTime: "17:00",
-    cities: "Sorocaba (Centro)",
-    colleges: "UniFacens, Fatec",
-  });
-  const outro = await repo.createDriver({
-    name: "Outro Motorista",
-    phone: "1",
-    email: "outro2@teste.com",
-    vanModel: "Van",
-    plate: "OUT-2B22",
-    capacity: 10,
-    departureTime: "17:00",
-    cities: "Itu",
-    colleges: "Fatec",
-  });
-
-  // ao abrir o painel (ou na próxima partida do servidor) os coringas entram, uma vez só
-  await repo.driverDashboard(mateus.id);
-  await repo.syncDemoVans(true);
-  const now = new Date("2026-10-24T19:00:00Z");
-  const painel = await repo.driverDashboard(mateus.id, now);
-  assert.equal(painel.passengers.length, 3);
-  assert.ok(
-    painel.passengers.every((p) => p.name.endsWith("(coringa)") && p.going === true && p.status === "Confirmado"),
-  );
-  assert.equal(painel.today.going, 3);
-  assert.equal(painel.today.legs[0]!.route!.stops.length, 3);
-  assert.equal((await repo.driverDashboard(outro.id, now)).passengers.length, 0); // só o motorista escolhido
-
-  // coringa não tem senha nem aparece como conta de verdade; a van real continua depois de DEMO_VANS=false
-  await repo.syncDemoVans(false);
-  process.env.DEMO_VANS = "false"; // como na Vercel: com a variável, eles não voltam
-  try {
-    assert.equal((await repo.getDriver(mateus.id)).name, "Mateus Coelho");
-    assert.equal((await repo.driverDashboard(mateus.id, now)).passengers.length, 0);
-  } finally {
-    delete process.env.DEMO_VANS;
-  }
+  const moto = (await repo.findAccount("driver", `motoupx@${DEMO_DOMAIN}`))!;
+  const now = new Date("2026-11-20T19:00:00Z"); // 16:00 em Brasília
+  const { today, driver } = await repo.driverDashboard(moto.id, now);
+  const [ida, volta] = today.legs;
+  assert.equal(ida!.route!.origin, "Avenida Paraná, 4495 - Sorocaba");
+  assert.equal(ida!.route!.destination, "UniFacens");
+  assert.equal(volta!.route!.origin, "UniFacens");
+  assert.equal(ida!.route!.stops.length, 4); // o EstudanteUpx ainda não respondeu; os outros 4 vão todo dia
+  for (const stop of ida!.route!.stops) assert.ok(stop.legMinutes > 0 && stop.legKm > 0, JSON.stringify(stop));
+  assert.ok(ida!.route!.end!.minutes > 0);
+  assert.equal(volta!.route!.end, null);
+  // tempo total = trechos + 2 minutos parado em cada aluno
+  const trechos = ida!.route!.stops.reduce((total, stop) => total + stop.legMinutes, 0) + ida!.route!.end!.minutes;
+  assert.ok(Math.abs(ida!.route!.totalMinutes - (trechos + 2 * 4)) <= 4, `${ida!.route!.totalMinutes} ${trechos}`);
+  assert.equal(driver.startAddress, "Avenida Paraná, 4495 - Sorocaba");
 });
 
-test("alunos coringa respeitam as vagas e o CORINGA_DRIVERS", async () => {
+test("finalizar a rota zera a presença: os alunos voltam a ver Vou / Não vou", async () => {
   const repo = await openDatabase(":memory:");
-  const pequena = await repo.createDriver({
-    name: "Mateus Coelho",
-    phone: "1",
-    email: "p@teste.com",
-    vanModel: "Van",
-    plate: "PEQ-3C33",
-    capacity: 2,
-    departureTime: "17:00",
-    cities: "Itu",
-    colleges: "Fatec",
-  });
-  assert.equal((await repo.driverDashboard(pequena.id)).passengers.length, 2); // só cabem 2
+  const moto = (await repo.findAccount("driver", `motoupx@${DEMO_DOMAIN}`))!;
+  const estudante = (await repo.findAccount("student", `estudanteupx@${DEMO_DOMAIN}`))!;
+  const now = new Date("2026-11-20T20:50:00Z"); // 17:50 em Brasília
+  await assert.rejects(repo.finishRoute(moto.id, "ida", now), /não está em andamento/);
+  await repo.setAttendance(estudante.id, true, now);
+  const iniciada = await repo.startRoute(moto.id, "ida", now);
+  assert.equal(iniciada.going, 5);
+  assert.equal(iniciada.legs[0]!.finishedAt, null);
+  await assert.rejects(repo.startRoute(moto.id, "ida", now), /em andamento/);
+  assert.match((await repo.studentToday(estudante.id, now)).legs[0]!.eta!, /^\d\d:\d\d$/);
 
-  process.env.CORINGA_DRIVERS = "outra@teste.com";
-  try {
-    const outra = await repo.createDriver({
-      name: "Outra Pessoa",
-      phone: "1",
-      email: "outra@teste.com",
-      vanModel: "Van",
-      plate: "OUT-4D44",
-      capacity: 5,
-      departureTime: "17:00",
-      cities: "Itu",
-      colleges: "Fatec",
-    });
-    assert.equal((await repo.driverDashboard(outra.id)).passengers.length, 3); // por e-mail
-    const nova = await repo.createDriver({
-      name: "Mateus Coelho",
-      phone: "1",
-      email: "n@teste.com",
-      vanModel: "Van",
-      plate: "NOV-5E55",
-      capacity: 5,
-      departureTime: "17:00",
-      cities: "Itu",
-      colleges: "Fatec",
-    });
-    assert.equal((await repo.driverDashboard(nova.id)).passengers.length, 0); // o nome padrão não vale mais
-  } finally {
-    delete process.env.CORINGA_DRIVERS;
+  const chegada = new Date("2026-11-20T21:30:00Z"); // 18:30
+  const finalizada = await repo.finishRoute(moto.id, "ida", chegada);
+  assert.equal(finalizada.legs[0]!.finishedAt, "18:30");
+  assert.equal(finalizada.legs[0]!.startedAt, "17:50");
+  const hoje = await repo.studentToday(estudante.id, chegada);
+  assert.equal(hoje.going, null); // os botões Vou / Não vou aparecem de novo
+  assert.equal(hoje.legs[0]!.finishedAt, "18:30");
+  const avisos = await repo.notifications({ profile: "student", id: estudante.id });
+  assert.equal(avisos.items[0]!.title, "Chegamos na faculdade");
+  await assert.rejects(repo.finishRoute(moto.id, "ida", chegada), /não está em andamento/);
+  assert.equal((await repo.setAttendance(estudante.id, false, chegada)).going, false);
+
+  // viagem finalizada pode ser iniciada de novo no mesmo dia
+  const denovo = await repo.startRoute(moto.id, "ida", new Date("2026-11-20T22:00:00Z"));
+  assert.equal(denovo.legs[0]!.startedAt, "19:00");
+  assert.equal(denovo.legs[0]!.finishedAt, null);
+});
+
+test("finalizar rota pela API: só o próprio motorista", async () => {
+  const moto = browser();
+  const login = await moto.call("POST", "/auth/login", {
+    profile: "driver",
+    email: `motoupx@${DEMO_DOMAIN}`,
+    password: DEMO_PASSWORD,
+  });
+  const id = login.body.id;
+  assert.equal((await call("POST", `/drivers/${id}/route-runs/finish`, { leg: "volta" })).status, 401);
+  assert.equal((await moto.call("POST", `/drivers/${id}/route-runs/finish`, { leg: "volta" })).status, 409);
+  assert.equal((await moto.call("POST", `/drivers/${id}/route-runs/finish`, { leg: "x" })).status, 400);
+  assert.equal((await moto.call("POST", `/drivers/${id}/route-runs`, { leg: "volta" })).status, 201);
+  const fim = await moto.call("POST", `/drivers/${id}/route-runs/finish`, { leg: "volta" });
+  assert.equal(fim.status, 200);
+  assert.match(fim.body.legs[1].finishedAt, /^\d\d:\d\d$/);
+});
+
+test("meu perfil: o motorista vê e altera o endereço de saída, telefone, horários e cidades", async () => {
+  const motorista = browser();
+  const semSaida = await motorista.call("POST", "/drivers", {
+    ...newDriver,
+    email: "perfil@teste.com",
+    plate: "PER-1F00",
+    startAddress: " ",
+  });
+  assert.equal(semSaida.status, 400);
+  assert.match(semSaida.body.error, /startAddress/);
+  const criado = await motorista.call("POST", "/drivers", {
+    ...newDriver,
+    email: "perfil@teste.com",
+    plate: "PER-1F00",
+  });
+  assert.equal(criado.status, 201);
+  assert.equal(criado.body.startAddress, "Rua do Comércio, 1000 - Votorantim");
+  const id = criado.body.id;
+
+  const perfil = await motorista.call("GET", `/drivers/${id}`);
+  assert.equal(perfil.body.email, "perfil@teste.com");
+
+  const alterado = await motorista.call("PATCH", `/drivers/${id}`, {
+    phone: "(15) 98888-7777",
+    startAddress: "Rua Nova, 50 - Campolim, Sorocaba",
+    departureTime: "17:10",
+    returnTime: "",
+    cities: "Sorocaba, Campolim",
+    email: "outro@teste.com", // não muda
+    name: "Outro Nome", // não muda
+  });
+  assert.equal(alterado.status, 200);
+  assert.equal(alterado.body.phone, "(15) 98888-7777");
+  assert.equal(alterado.body.startAddress, "Rua Nova, 50 - Campolim, Sorocaba");
+  assert.equal(alterado.body.departureTime, "17:10");
+  assert.equal(alterado.body.returnTime, null);
+  assert.deepEqual(alterado.body.cities, ["Sorocaba", "Campolim"]);
+  assert.equal(alterado.body.email, "perfil@teste.com");
+  assert.equal(alterado.body.name, "Joana Souza");
+
+  for (const invalido of [{ departureTime: "25:00" }, { startAddress: "" }, { cities: "" }, { phone: " " }]) {
+    assert.equal((await motorista.call("PATCH", `/drivers/${id}`, invalido)).status, 400, JSON.stringify(invalido));
   }
+  assert.equal((await call("PATCH", `/drivers/${id}`, { phone: "1" })).status, 401);
+});
+
+test("o aluno compara as vans: previsão de entrada, chegada na faculdade e em casa, e a mais rápida em destaque", async () => {
+  const repo = await openDatabase(":memory:");
+  const estudante = (await repo.findAccount("student", `estudanteupx@${DEMO_DOMAIN}`))!;
+  const vans = await repo.listVans({ studentId: estudante.id });
+  assert.equal(vans.length, 9);
+  assert.ok(vans.every((van) => van.estimate !== null));
+  assert.equal(vans.filter((van) => van.fastest).length, 1);
+  assert.ok(vans[0]!.fastest); // a mais rápida vem primeiro
+  const minutos = vans.map((van) => van.estimate!.pickupMinutes + van.estimate!.homeMinutes);
+  assert.deepEqual(
+    minutos,
+    [...minutos].sort((a, b) => a - b),
+  );
+  const moto = vans.find((van) => van.driver === "MotoUpx")!;
+  assert.ok(moto.booked);
+  assert.ok(moto.fastest); // sai perto da casa do aluno: é a que chega mais rápido nos dois sentidos
+  assert.ok(moto.estimate!.pickup > "17:50" && moto.estimate!.collegeArrival > moto.estimate!.pickup);
+  assert.ok(moto.estimate!.homeArrival! > "22:40");
+  // a van de Itu (longe) leva mais tempo que a MotoUpx, que sai perto da casa do aluno
+  const itu = vans.find((van) => van.driver.startsWith("André Fonseca"))!;
+  assert.ok(itu.estimate!.pickupMinutes > moto.estimate!.pickupMinutes);
+  // a busca pública (sem login de aluno) não traz previsão
+  assert.ok((await repo.listVans({ college: "UniFacens" })).every((van) => van.estimate === null && !van.fastest));
 });
 
 test("termos: texto público, PDF e aceite digital do motorista", async () => {

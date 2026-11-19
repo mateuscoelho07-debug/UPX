@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, afterNextRender, inject, output, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  afterNextRender,
+  inject,
+  output,
+  signal,
+} from "@angular/core";
 import { ApiService, type Notification } from "../api.service";
 import { Icon } from "../shared/icon";
 
@@ -7,11 +16,16 @@ export const POLL_MS = 30_000;
 
 // Sino do painel: lista os avisos (presença, rota iniciada, reservas) e, se o
 // usuário permitir, mostra também uma notificação do navegador enquanto o site está aberto.
+// A lista fecha com um clique em qualquer lugar fora dela (ou com Esc).
 @Component({
   selector: "app-notification-bell",
   imports: [Icon],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: "relative" },
+  host: {
+    class: "relative",
+    "(document:click)": "closeIfOutside($event)",
+    "(document:keydown.escape)": "open.set(false)",
+  },
   template: `
     <button
       class="relative grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
@@ -59,6 +73,7 @@ export const POLL_MS = 30_000;
 export class NotificationBell {
   private readonly api = inject(ApiService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly changed = output();
   readonly items = signal<Notification[]>([]);
   readonly unread = signal(0);
@@ -108,6 +123,11 @@ export class NotificationBell {
       this.unread.set(0);
       await this.api.markNotificationsRead().catch(() => {});
     }
+  }
+
+  // Clique fora do sino e da lista fecha os avisos
+  closeIfOutside(event: Event) {
+    if (this.open() && !this.host.nativeElement.contains(event.target as Node)) this.open.set(false);
   }
 
   when(iso: string) {

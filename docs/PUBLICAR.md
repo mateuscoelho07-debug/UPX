@@ -52,8 +52,8 @@ Abra **Environment Variables** e adicione uma por vez (nome, valor, **Add**):
 | `DATABASE_AUTH_TOKEN` | o token do Turso | Senha de acesso ao banco. |
 | `ADMIN_PASSWORD` | uma senha forte inventada por você | Senha do painel `/admin`. Sem ela, o painel fica desativado. |
 | `TRUST_PROXY` | `1` | Faz o login funcionar direito atrás do HTTPS da Vercel (cookie seguro e limite de tentativas por visitante). |
-| `SEED` | `false` | **Importante:** sem isso o banco ganha motoristas e estudantes de exemplo com senha conhecida (`rotau1234`). As faculdades da lista do cadastro são criadas sempre, com ou sem esta variável. |
-| `DEMO_VANS` | *(não crie por enquanto)* | Só quando houver motoristas reais: `false` apaga as vans fictícias de demonstração (veja "Vans de demonstração" abaixo). |
+| `SEED` | *(não é mais usada)* | Versões antigas criavam contas de exemplo; agora só existem as contas de demonstração (veja `DEMO_VANS`). Se ela já estiver lá, pode deixar ou apagar. |
+| `DEMO_VANS` | *(não crie por enquanto)* | Só quando não precisar mais da demonstração: `false` apaga as contas de demonstração (veja "Contas de demonstração" abaixo). |
 | `SUBSCRIPTION_PRICE` | *(opcional)* ex.: `29,90` | Valor da assinatura mensal do motorista, em reais. Sem ela, vale R$ 29,90. |
 | `SUBSCRIPTION` | *(opcional)* `off` | `off` desliga a cobrança: todas as vans aparecem, como era antes. |
 
@@ -104,7 +104,7 @@ Todo dia o estudante abre o painel e toca em **Vou hoje** ou **Não vou hoje**. 
 
 Os avisos aparecem no **sino** do painel (estudante e motorista) e, se a pessoa permitir, também como notificação do navegador **enquanto o site está aberto**. Eles ficam salvos nas tabelas `attendance`, `route_runs` e `notifications` do Turso; elas são criadas sozinhas na primeira visita, sem você fazer nada. Os motoristas já cadastrados ganham o horário de volta como "a combinar" (e as vans de demonstração, 22:40).
 
-**O que ficou de fora:** notificação com o site fechado (Web Push) precisa de chaves e de um serviço que dispare no horário, o que não cabe no plano gratuito da Vercel sem complicar; fica para uma próxima etapa. Dá para o motorista informar o horário de volta no cadastro, mas ainda não dá para editar depois.
+**O que ficou de fora:** notificação com o site fechado (Web Push) precisa de chaves e de um serviço que dispare no horário, o que não cabe no plano gratuito da Vercel sem complicar; fica para uma próxima etapa. Os horários de ida e volta, as cidades, o telefone e o endereço de saída podem ser mudados depois em **Meu perfil**, no painel do motorista.
 
 ### Uma van por aluno
 
@@ -112,34 +112,38 @@ Cada estudante fica em **uma van só**. Na tela "Vans disponíveis" ele toca no 
 
 **Excluir a própria conta:** no fim do painel (aluno e motorista) há o link **Excluir minha conta**. Ele pede a senha e apaga a conta, as reservas, as presenças e os avisos; o motorista da van é avisado. Nada muda na Vercel nem no Turso: não há tabela nova.
 
-### Vans de demonstração (fictícias)
+### Contas de demonstração (para apresentar o projeto)
 
-Para a busca nunca ficar vazia, o RotaU cria sozinho **11 vans fictícias de demonstração** que cobrem toda a região de Sorocaba (Centro e as quatro zonas de Sorocaba, Votorantim, Itu, Salto, Porto Feliz, Boituva, Tatuí, Iperó, Itapetininga, São Roque, Mairinque e outras cidades vizinhas) e atendem **todas as 12 faculdades** da lista, inclusive as que forem cadastradas depois.
+O RotaU cria sozinho **9 motoristas de demonstração**, cada um com **5 alunos** (45 no total), para a apresentação do projeto. A lista completa, com e-mails e a senha (`rotau1234`), está em [`DEMO_USUARIOS.md`](DEMO_USUARIOS.md).
 
-- Elas aparecem com **"(demo)"** no nome do motorista. Os motoristas não existem.
-- São criadas mesmo com `SEED=false`, e só uma vez (publicar de novo não duplica).
-- **Ninguém consegue entrar nessas contas:** elas não têm senha, então o login sempre falha.
-- Um estudante pode reservar vaga numa van de demonstração, mas ninguém vai confirmar a reserva.
-- Cada van de demonstração já vem com **5 alunos fictícios** ("(demo)" no nome, 55 no total), com endereços que parecem reais (ruas, bairros e cidades da região) mas casas inventadas. Eles também não têm senha e são apagados junto com as vans por `DEMO_VANS=false`.
-- **Alunos coringa:** o motorista **"Mateus Coelho"** (conta real) ganha **3 alunos coringa** ("(coringa)" no nome, com endereços de Sorocaba) que sempre contam como "Vou hoje", para testar a rota e a previsão. Eles entram sozinhos quando o motorista abre o painel (ou na próxima partida do site), respeitam as vagas livres e não têm senha. Para outro motorista, crie `CORINGA_DRIVERS` na Vercel com os nomes ou e-mails separados por vírgula (`off` desliga). `DEMO_VANS=false` apaga só os coringas; a van continua.
-- Os alunos de demonstração contam como **"Vou hoje"** todos os dias, para o painel do motorista e a previsão sempre terem o que mostrar.
+- **MotoUpx** (`motoupx@rotau.test`) sai da **Avenida Paraná, 4495** (Sorocaba) e já leva o **EstudanteUpx** (`estudanteupx@rotau.test`, Rua José Leite do Canto Júnior, 441 - Jardim Montreal) e mais 4 alunos. Os outros 8 motoristas ("(demo)" no nome) cobrem outras regiões (Centro, zonas Sul, Leste e Oeste, Votorantim, Itu, Porto Feliz e Araçoiaba da Serra).
+- Todas as contas **entram com e-mail e senha**. Os e-mails terminam em `@rotau.test` (domínio que não existe de verdade), e ninguém consegue criar conta nova com ele.
+- São criadas na primeira visita depois da publicação, e só uma vez (publicar de novo não duplica). Se um aluno de demonstração cancelar a vaga durante a apresentação, ele volta para a van dele na próxima vez que o site iniciar.
+- Os alunos fictícios contam como **"Vou hoje"** todo dia. O EstudanteUpx responde sozinho, como um aluno de verdade.
+- Os motoristas de demonstração atendem **todas as faculdades** da lista e não precisam de assinatura.
+
+**Limpeza dos motoristas antigos (uma vez só):** na primeira visita depois desta publicação, o site **apaga todos os motoristas que estavam cadastrados** (inclusive as 11 vans de demonstração antigas e os seus alunos fictícios), porque o cadastro agora pede o endereço de saída da van. Os alunos de verdade continuam, sem van, e recebem um aviso no sino para escolher uma van de novo. Os motoristas que se cadastrarem depois disso **não** são apagados. Não há nada para fazer no Turso: a limpeza fica registrada na tabela `data_migrations`.
+
+**Como remover a demonstração:** na Vercel, abra **Settings → Environment Variables**, crie a variável `DEMO_VANS` com o valor `false` e faça **Redeploy**. Na próxima visita ao site, as contas de demonstração (e as reservas feitas nelas) são apagadas. Os motoristas reais não são afetados. Enquanto `DEMO_VANS=false` existir, elas não voltam.
 
 ### Como o tempo de busca é calculado
 
 O RotaU **não usa serviço de mapas** (nada para configurar, grátis e sem chave). O cálculo roda no próprio site:
 
-1. Cada endereço vira um ponto no mapa. Os alunos de demonstração têm coordenadas fixas. Para os alunos de verdade, o site pergunta ao **Nominatim** (OpenStreetMap, grátis e sem chave) a posição do endereço, no cadastro e quando o aluno abre o painel, e guarda o resultado. Se o serviço estiver fora do ar ou devolver um lugar fora da região, usa o bairro ou a cidade achados no texto (ex.: "Campolim", "Itu"). Se nem isso der, o aluno é colocado no meio da área que a van atende. Para desligar a consulta online, crie `GEOCODE=false`.
-2. A ordem das paradas é o caminho mais curto (vizinho mais próximo, melhorado pelo método 2-opt). Na ida a van sai da primeira cidade dela e termina na faculdade; na volta sai da faculdade e deixa cada aluno em casa.
+1. Cada endereço vira um ponto no mapa (o dos alunos e o endereço de saída da van, que o motorista informa no cadastro). As contas de demonstração têm coordenadas fixas. Para os endereços de verdade, o site pergunta ao **Nominatim** (OpenStreetMap, grátis e sem chave) a posição do endereço, no cadastro e quando o aluno abre o painel, e guarda o resultado. Se o serviço estiver fora do ar ou devolver um lugar fora da região, usa o bairro ou a cidade achados no texto (ex.: "Campolim", "Itu"). Se nem isso der, o aluno é colocado no meio da área que a van atende. Para desligar a consulta online, crie `GEOCODE=false`.
+2. A ordem das paradas é o caminho mais curto (vizinho mais próximo, melhorado pelo método 2-opt). Na ida a van sai da **casa do motorista** (endereço de saída), vai até o aluno 1, do aluno 1 ao aluno 2 e assim por diante, e termina na faculdade; na volta sai da faculdade e deixa o aluno 1, depois o 2, e assim por diante. Motoristas antigos sem endereço de saída saem da primeira cidade da rota.
 3. O tempo entre dois pontos vem da distância em linha reta, aumentada em 35% (as ruas não são retas): até 8 km a 30 km/h (cidade) e o que passar disso a 70 km/h (estrada). Cada parada soma 2 minutos.
 4. Só entra na conta quem confirmou **"Vou hoje"**. Antes de a van sair, a previsão usa o horário programado da van; depois que o motorista inicia a rota, usa a hora real da saída.
 
 É uma **estimativa**: não vê trânsito nem o endereço exato de quem digitou só uma rua. Se um dia quiserem mais precisão, o próximo passo é trocar a linha reta por um serviço de rotas (ex.: OpenRouteService, que pede uma chave grátis).
 
-**Como remover quando houver motoristas reais:** na Vercel, abra **Settings → Environment Variables**, crie a variável `DEMO_VANS` com o valor `false` e faça **Redeploy**. Na próxima visita ao site, as vans de demonstração (e as reservas feitas nelas) são apagadas. Os motoristas reais não são afetados. Enquanto `DEMO_VANS=false` existir, elas não voltam.
+**Comparar vans (painel do aluno):** embaixo do painel, cada van mostra a previsão para aquele aluno, já contando os outros alunos dela: **entrada na van** (quando a van chega na casa dele), **chegada na faculdade** e **chegada em casa** na volta. Fica em destaque, e em primeiro, a van com a **chegada mais rápida**: a menor soma do tempo da saída da van até a casa do aluno e do tempo da faculdade até a casa dele.
 
 ### Iniciar a rota e os avisos
 
-No painel, o motorista toca em **Iniciar ida** ou **Iniciar volta**. Cada aluno que confirmou "Vou hoje" recebe um aviso no sino com a **previsão de chegada** no ponto dele (ou em casa, na volta), calculada como na seção acima. O quadro **Rota calculada pelos endereços** mostra a ordem das paradas e o horário de cada uma. O site não abre nenhum mapa: é só o aviso e a previsão.
+No topo do painel, o motorista toca em **Iniciar ida** ou **Iniciar volta**. Cada aluno que confirmou "Vou hoje" recebe um aviso no sino com a **previsão de chegada** no ponto dele (ou em casa, na volta), calculada como na seção acima. O quadro **Quem vai na rota** mostra a saída, a ordem das paradas, o tempo e a distância de cada trecho e o horário de cada aluno; tocar no endereço copia o texto (para colar no aplicativo de mapas). O site não abre nenhum mapa: é só o aviso e a previsão.
+
+Ao chegar, o motorista toca em **Cheguei na faculdade · Finalizar** (ou **Finalizar volta**). A presença do dia é zerada e os alunos voltam a ver **Vou hoje / Não vou hoje**, para dizer se voltam com a van. Uma viagem finalizada pode ser iniciada de novo no mesmo dia. Assinatura, documentos, termos e **Meu perfil** ficam no fim do painel, em **Sua conta**.
 
 ### Assinatura mensal do motorista
 
@@ -149,7 +153,7 @@ O RotaU ganha dinheiro com uma **assinatura mensal só dos motoristas** (o aluno
 - No painel do motorista há o cartão **Assinatura do motorista**, com o valor, a validade e o botão **Assinar** / **Renovar**. Pagar antes do vencimento soma 30 dias ao que sobrou.
 - O motorista recebe avisos no **sino**: quando ainda não assinou, 3 dias antes de vencer e quando venceu (cada aviso uma vez só).
 - O valor simbólico é **R$ 29,90 a cada 30 dias**. Mude com `SUBSCRIPTION_PRICE` (reais) e `SUBSCRIPTION_DAYS` (dias) na Vercel.
-- As vans e os motoristas de **demonstração nunca vencem** e continuam visíveis.
+- Os motoristas de **demonstração nunca vencem** e continuam visíveis.
 - **Atenção:** o pagamento ainda é **simulado**: o botão renova sem cobrar nada. Para cobrar de verdade falta ligar um serviço de pagamento (Stripe ou Mercado Pago) no lugar do botão simulado. Quando isso estiver pronto, defina `SUBSCRIPTION_PAYMENT` com outro valor que não seja `simulado` para desligar o botão simulado.
 - **Motoristas que já existiam** no banco ficam sem assinatura e somem das buscas até assinarem. Se não quiser isso agora, defina `SUBSCRIPTION=off`.
 - Nada para fazer no Turso: as colunas novas (`subscription_until` e `subscription_notice`) são criadas sozinhas na primeira visita.

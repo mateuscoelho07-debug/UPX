@@ -113,7 +113,7 @@ test("endereço sem localização usa um tempo padrão e vai para o fim da rota"
   assert.equal(plan.stops[1]!.minutes, plan.stops[0]!.minutes + STOP_MINUTES + 6);
   const semOrigem = planRoute(null, [{ id: 1, point: { lat: 0, lng: 0 } }]);
   assert.equal(semOrigem.stops[0]!.minutes, 6);
-  assert.deepEqual(planRoute(null, []), { stops: [], totalMinutes: 0, distanceKm: 0 });
+  assert.deepEqual(planRoute(null, []), { stops: [], totalMinutes: 0, distanceKm: 0, end: null });
 });
 
 test("endereços digitados são localizados pelo bairro ou cidade", () => {
@@ -155,4 +155,28 @@ test("geocode: usa o resultado dentro da região e ignora o resto", async () => 
     null,
   );
   assert.equal(await geocode("abc", answer([{ lat: "-23.49", lon: "-47.43" }])), null); // endereço curto demais
+});
+
+test("cada parada traz o trecho desde o ponto anterior e a ida traz o último trecho até a faculdade", () => {
+  const origin = { lat: 0, lng: 0 };
+  const college = { lat: 0, lng: 0.09 };
+  const plan = planRoute(
+    origin,
+    [
+      { id: 2, point: { lat: 0, lng: 0.06 } },
+      { id: 1, point: { lat: 0, lng: 0.03 } },
+    ],
+    college,
+  );
+  const trecho = travelMinutes(origin, { lat: 0, lng: 0.03 });
+  assert.deepEqual(
+    plan.stops.map((s) => [s.id, s.legMinutes]),
+    [
+      [1, Math.round(trecho)],
+      [2, Math.round(trecho)],
+    ],
+  );
+  assert.ok(Math.abs(plan.stops[0]!.legKm - roadKm(origin, { lat: 0, lng: 0.03 })) < 0.1);
+  assert.equal(plan.end!.minutes, Math.round(trecho));
+  assert.equal(planRoute(origin, [{ id: 1, point: college }]).end, null); // volta: sem destino final
 });

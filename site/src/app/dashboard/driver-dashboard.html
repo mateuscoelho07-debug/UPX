@@ -7,16 +7,23 @@
         <h1 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">Seus passageiros</h1>
         <p class="mt-2 text-slate-600">
           {{ data() ? "Olá, " + firstName(data()!.driver.name) + "! " : "" }}Veja quem vai hoje, inicie a rota e
-          mantenha tudo organizado.
+          finalize quando chegar.
         </p>
       </div>
-      <div class="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-blue-950">
-        <span class="grid size-10 place-items-center rounded-xl bg-blue-600 text-white"
-          ><app-icon name="clock" class="size-5"
-        /></span>
-        <div>
-          <span class="block text-xs font-bold uppercase tracking-wider text-blue-600">Próxima saída</span
-          ><strong class="text-lg">{{ data()?.driver?.departureTime ?? "--:--" }}</strong>
+      <div class="flex flex-wrap items-center gap-3">
+        @if (data()) {
+          <button class="btn-secondary !px-4 !py-3 text-sm" type="button" (click)="scrollToProfile()">
+            <app-icon name="user" class="size-5" /> Meu perfil
+          </button>
+        }
+        <div class="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4 text-blue-950">
+          <span class="grid size-10 place-items-center rounded-xl bg-blue-600 text-white"
+            ><app-icon name="clock" class="size-5"
+          /></span>
+          <div>
+            <span class="block text-xs font-bold uppercase tracking-wider text-blue-600">Próxima saída</span
+            ><strong class="text-lg">{{ data()?.driver?.departureTime ?? "--:--" }}</strong>
+          </div>
         </div>
       </div>
     </div>
@@ -24,21 +31,71 @@
     <app-status-message [loading]="loading() && !data()" [error]="error()" (retry)="load()" />
 
     @if (data(); as d) {
-      <app-subscription-card
-        [driverId]="driverId()"
-        [subscription]="d.subscription"
-        (changed)="load()"
-        (unauthorized)="logout.emit()"
-      />
-      <app-documents-card
-        [driverId]="driverId()"
-        [documents]="d.documents"
-        (changed)="load()"
-        (unauthorized)="logout.emit()"
-      />
-      <app-terms-card [driverId]="driverId()" [terms]="d.terms" (changed)="load()" (unauthorized)="logout.emit()" />
+      @if (d.subscription.enabled && !d.subscription.active) {
+        <p class="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" role="status">
+          Sua van está oculta para novos alunos até a assinatura ficar em dia. Veja em <strong>Sua conta</strong>, no
+          fim da página.
+        </p>
+      }
+      <!-- Topo: iniciar / finalizar a viagem -->
+      <section class="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
+        <h2 class="text-lg font-extrabold text-slate-950">Iniciar rota</h2>
+        <p class="mt-1 text-sm text-slate-500">
+          Ao iniciar, cada aluno que vai hoje recebe um aviso com a previsão de chegada. Ao chegar, finalize: os alunos
+          voltam a responder se vão.
+        </p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          @for (leg of d.today.legs; track leg.leg) {
+            <div
+              class="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+              [class]="
+                leg.startedAt && !leg.finishedAt ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'
+              "
+            >
+              <div>
+                <strong class="block text-sm text-slate-950">{{
+                  leg.leg === "ida" ? "Ida para a faculdade" : "Volta para casa"
+                }}</strong>
+                <span class="text-sm text-slate-600">{{
+                  leg.finishedAt
+                    ? "Finalizada às " + leg.finishedAt + " (iniciada às " + leg.startedAt + ")"
+                    : leg.startedAt
+                      ? "Em andamento desde " + leg.startedAt
+                      : leg.scheduled
+                        ? "Saída programada às " + leg.scheduled
+                        : "Sem horário definido"
+                }}</span>
+              </div>
+              @if (leg.startedAt && !leg.finishedAt) {
+                <button
+                  class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  [disabled]="busyLeg() !== null"
+                  (click)="finish(leg.leg)"
+                >
+                  <app-icon name="flag" class="size-4" />
+                  {{ leg.leg === "ida" ? "Cheguei na faculdade · Finalizar" : "Finalizar volta" }}
+                </button>
+              } @else {
+                <button
+                  class="btn-primary !px-4 !py-2.5 text-sm disabled:opacity-50"
+                  [disabled]="d.today.going === 0 || busyLeg() !== null"
+                  (click)="start(leg.leg)"
+                >
+                  {{ leg.finishedAt ? "Iniciar " + leg.leg + " de novo" : "Iniciar " + leg.leg }}
+                </button>
+              }
+            </div>
+          }
+        </div>
+        @if (d.today.going === 0) {
+          <p class="mt-3 text-xs text-slate-500">Nenhum aluno confirmou presença ainda.</p>
+        }
+        @if (actionError()) {
+          <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800" role="alert">{{ actionError() }}</p>
+        }
+      </section>
 
-      <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article class="rounded-2xl border border-slate-200 bg-white p-5">
           <span class="text-sm font-semibold text-slate-500">Vão hoje</span
           ><strong class="mt-2 block text-3xl font-extrabold text-emerald-600">{{ d.today.going }}</strong>
@@ -57,55 +114,13 @@
         </article>
       </div>
 
+      <!-- Quem vai na rota: ordem das paradas e cada trecho -->
       <section class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
-        <h2 class="text-lg font-extrabold text-slate-950">Iniciar rota</h2>
+        <h2 class="text-lg font-extrabold text-slate-950">Quem vai na rota</h2>
         <p class="mt-1 text-sm text-slate-500">
-          Ao iniciar, cada aluno que vai hoje recebe um aviso com a previsão de chegada no ponto dele.
-        </p>
-        <div class="mt-4 grid gap-3 sm:grid-cols-2">
-          @for (leg of d.today.legs; track leg.leg) {
-            <div class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div>
-                <strong class="block text-sm text-slate-950">{{
-                  leg.leg === "ida" ? "Ida para a faculdade" : "Volta para casa"
-                }}</strong>
-                <span class="text-sm text-slate-600">{{
-                  leg.startedAt
-                    ? "Iniciada às " + leg.startedAt
-                    : leg.scheduled
-                      ? "Saída programada às " + leg.scheduled
-                      : "Sem horário definido"
-                }}</span>
-              </div>
-              @if (leg.startedAt) {
-                <span class="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700"
-                  >Em andamento</span
-                >
-              } @else {
-                <button
-                  class="btn-primary !px-4 !py-2.5 text-sm disabled:opacity-50"
-                  [disabled]="d.today.going === 0"
-                  (click)="start(leg.leg)"
-                >
-                  Iniciar {{ leg.leg }}
-                </button>
-              }
-            </div>
-          }
-        </div>
-        @if (d.today.going === 0) {
-          <p class="mt-3 text-xs text-slate-500">Nenhum aluno confirmou presença ainda.</p>
-        }
-        @if (actionError()) {
-          <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ actionError() }}</p>
-        }
-      </section>
-
-      <section class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-blue-900/5">
-        <h2 class="text-lg font-extrabold text-slate-950">Rota calculada pelos endereços</h2>
-        <p class="mt-1 text-sm text-slate-500">
-          Só entra quem confirmou "Vou hoje". A ordem e os horários vêm da distância entre os endereços (cerca de 30
-          km/h na cidade e 70 km/h na estrada, mais 2 minutos parado em cada ponto).
+          Só entra quem confirmou "Vou hoje". A ida sai da sua casa e a volta, da faculdade. Ordem e horários vêm da
+          distância entre os endereços (cerca de 30 km/h na cidade e 70 km/h na estrada, mais 2 minutos parado em cada
+          ponto). Toque no endereço para copiar.
         </p>
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
           @for (leg of d.today.legs; track leg.leg) {
@@ -125,7 +140,24 @@
                   <p class="mt-1 text-xs text-slate-500">Horários previstos para a saída das {{ leg.scheduled }}.</p>
                 }
                 <ol class="mt-3 space-y-2">
+                  <li class="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-sm">
+                    <span class="grid size-7 shrink-0 place-items-center rounded-full bg-slate-200 text-slate-700"
+                      ><app-icon [name]="leg.leg === 'ida' ? 'home' : 'student'" class="size-4"
+                    /></span>
+                    <span class="min-w-0 flex-1"
+                      ><strong class="block text-slate-950">{{
+                        leg.leg === "ida" ? "Saída: sua casa" : "Saída: faculdade"
+                      }}</strong
+                      ><span class="block truncate text-xs text-slate-500">{{
+                        route.origin ?? "Endereço de saída não informado"
+                      }}</span></span
+                    >
+                    <strong class="text-slate-700">{{
+                      leg.startedAt && !leg.finishedAt ? leg.startedAt : (leg.scheduled ?? "--:--")
+                    }}</strong>
+                  </li>
                   @for (stop of route.stops; track stop.studentId) {
+                    <li class="pl-6 text-xs text-slate-500">↓ {{ stop.legMinutes }} min · {{ stop.legKm }} km</li>
                     <li class="flex items-center gap-3 rounded-xl bg-white p-3 text-sm">
                       <span
                         class="grid size-7 shrink-0 place-items-center rounded-full bg-blue-600 text-xs font-extrabold text-white"
@@ -133,9 +165,19 @@
                       >
                       <span class="min-w-0 flex-1"
                         ><strong class="block truncate text-slate-950">{{ stop.name }}</strong
-                        ><span class="block truncate text-xs text-slate-500">{{ stop.pickup }}</span></span
-                      >
+                        ><app-copy-text class="text-xs text-slate-500" label="Copiar endereço" [text]="stop.pickup"
+                      /></span>
                       <strong class="text-blue-700">{{ stop.eta ?? "--:--" }}</strong>
+                    </li>
+                  }
+                  @if (route.end; as end) {
+                    <li class="pl-6 text-xs text-slate-500">↓ {{ end.minutes }} min · {{ end.km }} km</li>
+                    <li class="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-sm">
+                      <span class="grid size-7 shrink-0 place-items-center rounded-full bg-slate-200 text-slate-700"
+                        ><app-icon name="flag" class="size-4"
+                      /></span>
+                      <strong class="min-w-0 flex-1 text-slate-950">Chegada: {{ route.destination }}</strong>
+                      <strong class="text-slate-700">{{ route.arrival ?? "--:--" }}</strong>
                     </li>
                   }
                 </ol>
@@ -189,9 +231,11 @@
                   }
                 </div>
               </div>
-              <span class="flex items-center gap-2 text-sm text-slate-600"
-                ><app-icon name="location" class="size-4 text-slate-400" />{{ passenger.pickup
-                }}{{ passenger.pickupTime ? ", " + passenger.pickupTime : "" }}</span
+              <span class="flex min-w-0 items-center gap-2 text-sm text-slate-600"
+                ><app-icon name="location" class="size-4 text-slate-400" /><app-copy-text
+                  label="Copiar endereço"
+                  [text]="passenger.pickup"
+                />{{ passenger.pickupTime ? ", " + passenger.pickupTime : "" }}</span
               >
               <span class="flex items-center gap-2 text-sm font-semibold text-slate-700"
                 ><app-icon name="student" class="size-4 text-slate-400" />{{ passenger.college }}</span
@@ -223,6 +267,24 @@
           }
         </div>
       </section>
+
+      <!-- Embaixo: conta, assinatura e documentos -->
+      <h2 class="mt-14 text-xl font-extrabold tracking-tight text-slate-950">Sua conta</h2>
+      <p class="mt-1 text-sm text-slate-600">Perfil, assinatura, documentos do veículo e termos.</p>
+      <app-driver-profile-card [driver]="d.driver" (changed)="load()" (unauthorized)="logout.emit()" />
+      <app-subscription-card
+        [driverId]="driverId()"
+        [subscription]="d.subscription"
+        (changed)="load()"
+        (unauthorized)="logout.emit()"
+      />
+      <app-documents-card
+        [driverId]="driverId()"
+        [documents]="d.documents"
+        (changed)="load()"
+        (unauthorized)="logout.emit()"
+      />
+      <app-terms-card [driverId]="driverId()" [terms]="d.terms" (changed)="load()" (unauthorized)="logout.emit()" />
     }
     <app-delete-account (deleted)="logout.emit()" />
   </main>

@@ -266,11 +266,14 @@
   </footer>
 
   @if (modalOpen()) {
+    <!-- clicar fora da janela (no fundo escuro) ou apertar Esc fecha -->
     <div
       class="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       [attr.aria-label]="mode() === 'login' ? 'Entrar' : 'Criar conta'"
+      (mousedown)="pressBackdrop($event)"
+      (click)="closeOnBackdrop($event)"
     >
       <div class="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8">
         <div class="flex items-start justify-between">
@@ -429,6 +432,13 @@
                     ><input class="form-control" name="plate" required placeholder="ABC-1D23"
                   /></app-field>
                 </div>
+                <app-field label="Endereço de saída da van (sua casa)" icon="location"
+                  ><input class="form-control" name="startAddress" required placeholder="Rua, número, bairro e cidade"
+                /></app-field>
+                <p class="-mt-2 text-xs text-slate-500">
+                  A rota da ida começa aqui: sua casa → primeiro aluno → segundo aluno → ... → faculdade. Só você vê
+                  este endereço.
+                </p>
                 <div class="grid gap-4 sm:grid-cols-3">
                   <app-field label="Lugares na van" icon="user"
                     ><input class="form-control" name="capacity" required type="number" min="1" max="30" value="12"
