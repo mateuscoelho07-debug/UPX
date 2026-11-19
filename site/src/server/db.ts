@@ -757,10 +757,7 @@ function createRepository(db: Client) {
     },
 
     // Descobre a posição do endereço de saída da van (uma tentativa por execução do servidor)
-    async locateDriver(
-      driverId: number,
-      locate: (address: string) => Promise<Point | null> = geocode,
-    ): Promise<void> {
+    async locateDriver(driverId: number, locate: (address: string) => Promise<Point | null> = geocode): Promise<void> {
       if (triedLocatingDriver.has(driverId)) return;
       const row = await get<{ lat: number | null; address: string | null }>(
         "SELECT start_lat AS lat, start_address AS address FROM drivers WHERE id = ?",
@@ -769,7 +766,8 @@ function createRepository(db: Client) {
       if (!row || row.lat !== null || !row.address) return;
       triedLocatingDriver.add(driverId);
       const point = await locate(row.address);
-      if (point) await run("UPDATE drivers SET start_lat = ?, start_lng = ? WHERE id = ?", [point.lat, point.lng, driverId]);
+      if (point)
+        await run("UPDATE drivers SET start_lat = ?, start_lng = ? WHERE id = ?", [point.lat, point.lng, driverId]);
     },
 
     // Busca da página inicial: quantas vans atendem a faculdade escolhida
@@ -1260,7 +1258,10 @@ function createRepository(db: Client) {
         args: [driverId, day, leg, startedAt],
       });
       if (rowsAffected === 0)
-        throw new ApiError(409, leg === "ida" ? "A ida de hoje já está em andamento." : "A volta de hoje já está em andamento.");
+        throw new ApiError(
+          409,
+          leg === "ida" ? "A ida de hoje já está em andamento." : "A volta de hoje já está em andamento.",
+        );
       const riders = (await passengersOf(driverId, day)).filter((p) => p.going === true);
       const driver = await getDriver(driverId);
       const planned = planLeg(driver, leg, riders, await startPoint(driver));
@@ -1291,7 +1292,10 @@ function createRepository(db: Client) {
         args: [finishedAt, driverId, day, leg],
       });
       if (rowsAffected === 0)
-        throw new ApiError(409, leg === "ida" ? "A ida de hoje não está em andamento." : "A volta de hoje não está em andamento.");
+        throw new ApiError(
+          409,
+          leg === "ida" ? "A ida de hoje não está em andamento." : "A volta de hoje não está em andamento.",
+        );
       await run("DELETE FROM attendance WHERE driver_id = ? AND day = ?", [driverId, day]);
       const driver = await getDriver(driverId);
       for (const rider of riders) {
@@ -1624,7 +1628,7 @@ function createRepository(db: Client) {
     },
 
     // Faculdades atendidas: dados de referência que o cadastro precisa, criados sempre
-    // (em qualquer banco, mesmo com SEED=false). Idempotente: ignora as que já existem.
+    // (em qualquer banco). Idempotente: ignora as que já existem.
     async ensureColleges(): Promise<void> {
       for (const name of defaultColleges) await run("INSERT OR IGNORE INTO colleges (name) VALUES (?)", [name]);
     },

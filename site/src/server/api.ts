@@ -171,8 +171,7 @@ export function createApp(
     "/api/students",
     route(async (req, res) => {
       const data = body(req) as Record<string, unknown>;
-      if (isDemoEmail(String(data.email ?? "")))
-        throw new ApiError(400, "Use um e-mail real para criar a conta.");
+      if (isDemoEmail(String(data.email ?? ""))) throw new ApiError(400, "Use um e-mail real para criar a conta.");
       const passwordHash = await hashPassword(validatePassword(data.password));
       const student = await repo.createStudent({ ...data, passwordHash });
       await repo.locateStudent(student.id);

@@ -41,6 +41,8 @@ export class StudentDashboard implements OnInit {
   readonly bookError = signal<string | null>(null);
   // Cada estudante fica em uma van só
   readonly currentVan = computed(() => this.vans().find((van) => van.booked) ?? null);
+  // A API manda a previsão de cada van (e a mais rápida vem primeiro)
+  readonly hasEstimates = computed(() => this.vans().some((van) => van.estimate !== null));
   private readonly destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -104,6 +106,13 @@ export class StudentDashboard implements OnInit {
 
   // Texto de cada perna da viagem, como na tela de referência
   legText(leg: TodayLeg, going: boolean | null): string {
+    // viagem finalizada pelo motorista (a presença do dia é zerada e o aluno responde de novo)
+    if (leg.finishedAt) {
+      if (leg.leg === "volta") return `A volta terminou às ${leg.finishedAt}.`;
+      return going === null
+        ? `A van chegou na faculdade às ${leg.finishedAt}. Responda acima se você volta com a van.`
+        : `A van chegou na faculdade às ${leg.finishedAt}.`;
+    }
     if (going === false) return "Você avisou que não vai hoje, então a van não passa no seu ponto.";
     const scheduled = leg.scheduled
       ? `Saída programada às ${leg.scheduled}.`

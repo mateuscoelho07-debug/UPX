@@ -11,6 +11,8 @@ import { SubscriptionCard } from "./dashboard/subscription-card";
 import { DocumentsCard } from "./dashboard/documents-card";
 import { TermsCard } from "./dashboard/terms-card";
 import { DriverDashboard } from "./dashboard/driver-dashboard";
+import { NotificationBell } from "./dashboard/notification-bell";
+import HomePage from "./home/home-page";
 
 const day = {
   day: "2026-10-23",
@@ -342,11 +344,13 @@ describe("DriverDashboard", () => {
   );
 
   const route = {
+    origin: "Avenida Paraná, 4495 - Sorocaba",
     destination: "Fatec",
+    end: { minutes: 12, km: 5.1 },
     totalMinutes: 20,
     distanceKm: 8,
     arrival: "18:10",
-    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A", order: 1, eta: "17:50" }],
+    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A, 10", order: 1, eta: "17:50", legMinutes: 6, legKm: 2.4 }],
   };
   const leg = (name: string) => ({ leg: name, scheduled: "17:30", startedAt: null, eta: null, predicted: true, route });
   const dashboard = {
@@ -357,6 +361,12 @@ describe("DriverDashboard", () => {
       occupied: 1,
       capacity: 4,
       departureTime: "17:30",
+      returnTime: "22:40",
+      startAddress: "Avenida Paraná, 4495 - Sorocaba",
+      email: "carlos@teste.com",
+      phone: "(15) 1",
+      vanModel: "Master",
+      plate: "ABC-1D23",
       cities: ["Sorocaba"],
       colleges: ["Fatec"],
     },
@@ -384,8 +394,16 @@ describe("DriverDashboard", () => {
     http.expectOne("/api/drivers/5/dashboard").flush(dashboard);
     await settle(fixture);
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.textContent).toContain("Rota calculada pelos endereços");
+    expect(el.textContent).toContain("Quem vai na rota");
     expect(el.textContent).toContain("17:50");
+    expect(el.textContent).toContain("Saída: sua casa");
+    expect(el.textContent).toContain("↓ 6 min · 2.4 km");
+    expect(el.textContent).toContain("Chegada: Fatec");
+    // rota e iniciar no topo; assinatura, documentos e termos embaixo
+    const text = el.textContent!;
+    expect(text.indexOf("Iniciar rota")).toBeLessThan(text.indexOf("Quem vai na rota"));
+    expect(text.indexOf("Lista de embarque")).toBeLessThan(text.indexOf("Documentos do veículo"));
+    expect(text.indexOf("Lista de embarque")).toBeLessThan(text.indexOf("Termos e Segurança"));
     expect(el.textContent).not.toContain("Google Maps");
 
     [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Iniciar ida"))!.click();
@@ -397,6 +415,234 @@ describe("DriverDashboard", () => {
     http.match("/api/drivers/5/dashboard").forEach((r) => r.flush(dashboard));
     http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
     open.mockRestore();
+    fixture.destroy();
+  });
+});
+
+describe("DriverDashboard: finalizar, copiar endereço e perfil", () => {
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
+
+  const route = {
+    origin: "Avenida Paraná, 4495 - Sorocaba",
+    destination: "Fatec",
+    end: null,
+    totalMinutes: 20,
+    distanceKm: 8,
+    arrival: "18:10",
+    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A, 10", order: 1, eta: "17:50", legMinutes: 6, legKm: 2.4 }],
+  };
+  const driver = {
+    id: 5,
+    name: "Carlos",
+    email: "carlos@teste.com",
+    phone: "(15) 1",
+    vanModel: "Master",
+    plate: "ABC-1D23",
+    freeSeats: 3,
+    occupied: 1,
+    capacity: 4,
+    departureTime: "17:30",
+    returnTime: "22:40",
+    startAddress: "Avenida Paraná, 4495 - Sorocaba",
+    cities: ["Sorocaba"],
+    colleges: ["Fatec"],
+  };
+  const dashboard = (startedAt: string | null) => ({
+    driver,
+    passengers: [
+      {
+        bookingId: 1,
+        studentId: 1,
+        name: "Ana",
+        pickup: "Rua A, 10",
+        pickupTime: null,
+        college: "Fatec",
+        status: "Confirmado",
+        going: true,
+      },
+    ],
+    mainDestination: "Fatec",
+    today: {
+      day: "2026-11-20",
+      weekday: "Sexta-feira",
+      going: 1,
+      notGoing: 0,
+      pending: 0,
+      legs: [
+        { leg: "ida", scheduled: "17:30", startedAt, finishedAt: null, eta: null, predicted: !startedAt, route },
+        { leg: "volta", scheduled: "22:40", startedAt: null, finishedAt: null, eta: null, predicted: true, route },
+      ],
+    },
+    subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
+    documents: [],
+    terms: { version: "1.0", acceptedVersion: "1.0", acceptedAt: "2026-11-01 10:00:00", accepted: true },
+  });
+
+  async function open(data: object) {
+    const fixture = TestBed.createComponent(DriverDashboard);
+    fixture.componentRef.setInput("driverId", 5);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne("/api/drivers/5/dashboard").flush(data);
+    await settle(fixture);
+    return { fixture, http, el: fixture.nativeElement as HTMLElement };
+  }
+  const button = (el: HTMLElement, text: string) =>
+    [...el.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
+
+  it("com a ida em andamento, mostra o botão de finalizar ao chegar na faculdade", async () => {
+    const { fixture, http, el } = await open(dashboard("17:31"));
+    expect(el.textContent).toContain("Em andamento desde 17:31");
+    button(el, "Cheguei na faculdade").click();
+    const req = http.expectOne("/api/drivers/5/route-runs/finish");
+    expect(req.request.method).toBe("POST");
+    expect(req.request.body).toEqual({ leg: "ida" });
+    req.flush({});
+    await settle(fixture);
+    http.match("/api/drivers/5/dashboard").forEach((r) => r.flush(dashboard(null)));
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
+    fixture.destroy();
+  });
+
+  it("copia o endereço do passageiro ao clicar", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const { fixture, http, el } = await open(dashboard(null));
+    const copiar = el.querySelector<HTMLButtonElement>('button[aria-label="Copiar endereço: Rua A, 10"]')!;
+    copiar.click();
+    await settle(fixture);
+    expect(writeText).toHaveBeenCalledWith("Rua A, 10");
+    expect(el.textContent).toContain("Copiado!");
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
+    fixture.destroy();
+  });
+
+  it("meu perfil mostra o e-mail e salva o endereço de saída", async () => {
+    const { fixture, http, el } = await open(dashboard(null));
+    expect(el.textContent).toContain("carlos@teste.com");
+    expect(el.textContent).toContain("Avenida Paraná, 4495 - Sorocaba");
+    button(el, "Editar dados").click();
+    fixture.detectChanges();
+    const address = el.querySelector<HTMLInputElement>('input[name="startAddress"]')!;
+    address.value = "Rua Nova, 50 - Campolim";
+    el.querySelector<HTMLFormElement>("#perfil form")!.dispatchEvent(new Event("submit"));
+    const req = http.expectOne("/api/drivers/5");
+    expect(req.request.method).toBe("PATCH");
+    expect(req.request.body).toMatchObject({ startAddress: "Rua Nova, 50 - Campolim", phone: "(15) 1" });
+    req.flush({ ...driver, startAddress: "Rua Nova, 50 - Campolim" });
+    await settle(fixture);
+    http.match("/api/drivers/5/dashboard").forEach((r) => r.flush(dashboard(null)));
+    await settle(fixture);
+    expect(el.textContent).toContain("Dados atualizados.");
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
+    fixture.destroy();
+  });
+});
+
+describe("StudentDashboard: comparar vans", () => {
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
+
+  it("destaca a van com a chegada mais rápida e mostra entrada na van e chegada em casa", async () => {
+    const van = (id: number, name: string, pickup: string, fastest: boolean) => ({
+      id,
+      driver: name,
+      vehicle: "Master • 15 lugares",
+      route: "Sorocaba → UniFacens",
+      time: "17:50",
+      returnTime: "22:40",
+      capacity: 15,
+      freeSeats: 10,
+      rating: 5,
+      booked: fastest,
+      documentsSent: false,
+      estimate: { pickup, collegeArrival: "18:28", homeArrival: "23:05", pickupMinutes: 6, homeMinutes: 25 },
+      fastest,
+    });
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(StudentDashboard);
+    fixture.componentRef.setInput("studentId", 7);
+    fixture.detectChanges();
+    http.expectOne("/api/students/7").flush({
+      id: 7,
+      name: "EstudanteUpx",
+      phone: "1",
+      email: "e@e",
+      address: "Rua José Leite do Canto Júnior, 441",
+      collegeId: 1,
+      college: "UniFacens",
+    });
+    http.expectOne("/api/vans").flush([van(1, "MotoUpx", "17:56", true), van(2, "Outra", "18:20", false)]);
+    http.expectOne("/api/attendance/today").flush(day);
+    await settle(fixture);
+    const cards = [...(fixture.nativeElement as HTMLElement).querySelectorAll("section article")];
+    const moto = cards.find((c) => c.textContent?.includes("MotoUpx"))!;
+    const outra = cards.find((c) => c.textContent?.includes("Outra"))!;
+    expect(moto.textContent).toContain("Chegada mais rápida");
+    expect(moto.textContent).toContain("Entrada na van");
+    expect(moto.textContent).toContain("~17:56");
+    expect(moto.textContent).toContain("Chegada em casa");
+    expect(moto.textContent).toContain("~23:05");
+    expect(outra.textContent).not.toContain("Chegada mais rápida");
+    expect(outra.textContent).not.toContain("Melhor opção");
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
+    fixture.destroy();
+  });
+});
+
+describe("Avisos e janelas fecham ao clicar fora", () => {
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
+
+  it("o sino fecha com um clique em qualquer lugar da tela", async () => {
+    const fixture = TestBed.createComponent(NotificationBell);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const http = TestBed.inject(HttpTestingController);
+    http.match("/api/notifications").forEach((r) => r.flush({ unread: 0, items: [] }));
+    const el: HTMLElement = fixture.nativeElement;
+    el.querySelector("button")!.click();
+    fixture.detectChanges();
+    expect(el.textContent).toContain("Nenhum aviso por enquanto.");
+    // clique dentro da lista não fecha
+    el.querySelector("strong")!.click();
+    fixture.detectChanges();
+    expect(el.textContent).toContain("Nenhum aviso por enquanto.");
+    document.body.click();
+    fixture.detectChanges();
+    expect(el.textContent).not.toContain("Nenhum aviso por enquanto.");
+    // Esc também fecha
+    el.querySelector("button")!.click();
+    fixture.detectChanges();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    fixture.detectChanges();
+    expect(el.textContent).not.toContain("Nenhum aviso por enquanto.");
+    fixture.destroy();
+  });
+
+  it("a janela de cadastro/login fecha ao clicar no fundo, mas não ao clicar dentro", async () => {
+    const fixture = TestBed.createComponent(HomePage);
+    fixture.detectChanges();
+    const page = fixture.componentInstance;
+    page.openSignup("driver");
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    const backdrop = el.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(el.querySelector('input[name="startAddress"]')).not.toBeNull(); // cadastro de motorista pede a saída
+    const inside = backdrop.firstElementChild as HTMLElement;
+    inside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    inside.click();
+    fixture.detectChanges();
+    expect(page.modalOpen()).toBe(true);
+    backdrop.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    backdrop.click();
+    fixture.detectChanges();
+    expect(page.modalOpen()).toBe(false);
     fixture.destroy();
   });
 });

@@ -269,8 +269,7 @@ test("bloqueia login depois de muitas tentativas erradas", async () => {
           email: `motorista3@${DEMO_DOMAIN}`,
           password: "chute-errado",
         })
-      )
-        .status,
+      ).status,
       401,
     );
   }
@@ -1177,7 +1176,11 @@ test("meu perfil: o motorista vê e altera o endereço de saída, telefone, hor�
   });
   assert.equal(semSaida.status, 400);
   assert.match(semSaida.body.error, /startAddress/);
-  const criado = await motorista.call("POST", "/drivers", { ...newDriver, email: "perfil@teste.com", plate: "PER-1F00" });
+  const criado = await motorista.call("POST", "/drivers", {
+    ...newDriver,
+    email: "perfil@teste.com",
+    plate: "PER-1F00",
+  });
   assert.equal(criado.status, 201);
   assert.equal(criado.body.startAddress, "Rua do Comércio, 1000 - Votorantim");
   const id = criado.body.id;
@@ -1218,7 +1221,10 @@ test("o aluno compara as vans: previsão de entrada, chegada na faculdade e em c
   assert.equal(vans.filter((van) => van.fastest).length, 1);
   assert.ok(vans[0]!.fastest); // a mais rápida vem primeiro
   const minutos = vans.map((van) => van.estimate!.pickupMinutes + van.estimate!.homeMinutes);
-  assert.deepEqual(minutos, [...minutos].sort((a, b) => a - b));
+  assert.deepEqual(
+    minutos,
+    [...minutos].sort((a, b) => a - b),
+  );
   const moto = vans.find((van) => van.driver === "MotoUpx")!;
   assert.ok(moto.booked);
   assert.ok(moto.fastest); // sai perto da casa do aluno: é a que chega mais rápido nos dois sentidos

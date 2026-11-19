@@ -8,6 +8,9 @@ export type IconName =
   | "check"
   | "clock"
   | "close"
+  | "copy"
+  | "flag"
+  | "home"
   | "location"
   | "lock"
   | "route"
@@ -55,6 +58,16 @@ export type IconName =
         }
         @case ("close") {
           <svg:path d="m6 6 12 12M18 6 6 18" />
+        }
+        @case ("copy") {
+          <svg:rect x="9" y="9" width="11" height="11" rx="2" />
+          <svg:path d="M5 15V6a2 2 0 0 1 2-2h9" />
+        }
+        @case ("flag") {
+          <svg:path d="M5 21V4M5 4h11l-2 4 2 4H5" />
+        }
+        @case ("home") {
+          <svg:path d="M4 11l8-7 8 7M6 9.5V20h12V9.5" />
         }
         @case ("location") {
           <svg:path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
