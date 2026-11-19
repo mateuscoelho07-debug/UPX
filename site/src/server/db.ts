@@ -1,7 +1,7 @@
 // Camada de acesso ao banco de dados do RotaU.
 // Usa o libSQL (compatível com SQLite): um arquivo local em desenvolvimento
 // e o Turso (banco gratuito na nuvem) quando o site está publicado.
-import { createClient, type Client, type InValue, type Transaction } from "@libsql/client";
+import { createClient, type Client, type InStatement, type InValue, type Transaction } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -280,9 +280,14 @@ async function migrate(db: Client) {
     ["drivers", "start_lng", "REAL"],
     ["route_runs", "finished_at", "TEXT"],
   ];
+  // uma consulta por tabela (no Turso cada consulta é uma ida e volta pela internet)
+  const existing = new Map<string, Set<unknown>>();
   for (const [table, column, type] of columns) {
-    const { rows } = await db.execute(`PRAGMA table_info(${table})`);
-    if (!rows.some((row) => row.name === column)) {
+    if (!existing.has(table)) {
+      const { rows } = await db.execute(`PRAGMA table_info(${table})`);
+      existing.set(table, new Set(rows.map((row) => row.name)));
+    }
+    if (!existing.get(table)!.has(column)) {
       await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
   }
@@ -1630,7 +1635,10 @@ function createRepository(db: Client) {
     // Faculdades atendidas: dados de referência que o cadastro precisa, criados sempre
     // (em qualquer banco). Idempotente: ignora as que já existem.
     async ensureColleges(): Promise<void> {
-      for (const name of defaultColleges) await run("INSERT OR IGNORE INTO colleges (name) VALUES (?)", [name]);
+      await db.batch(
+        defaultColleges.map((name) => ({ sql: "INSERT OR IGNORE INTO colleges (name) VALUES (?)", args: [name] })),
+        "write",
+      );
     },
 
     // Limpeza única (ver REMOVE_OLD_DRIVERS): apaga todos os motoristas e os alunos fictícios antigos.
@@ -1674,77 +1682,93 @@ function createRepository(db: Client) {
         });
         return;
       }
-      let passwordHash: string | undefined;
-      const hash = () => (passwordHash ??= hashPasswordSync(DEMO_PASSWORD));
-      // endereço informado pelo projeto: tenta o mapa; senão (ou nos fictícios), a posição fixa de demo.ts
-      const pointOf = async (place: DemoPlace): Promise<Point> =>
-        (place.geocode ? await locate(place.address) : null) ?? { lat: place.lat, lng: place.lng };
-      for (const demo of demoDrivers) {
-        let driverId = (await get<{ id: number }>("SELECT id FROM drivers WHERE email = ?", [demo.email]))?.id;
-        if (driverId === undefined) {
-          try {
-            driverId = (
-              await repo.createDriver({
-                ...demo,
-                startAddress: demo.start.address,
-                colleges: defaultColleges,
-                passwordHash: hash(),
-              })
-            ).id;
-          } catch (error) {
-            // duas instâncias subindo juntas: a outra já criou este motorista
-            if (!(error instanceof ApiError && error.status === 409)) throw error;
-            continue;
-          }
-          const start = await pointOf(demo.start);
-          await run("UPDATE drivers SET start_lat = ?, start_lng = ? WHERE id = ?", [start.lat, start.lng, driverId]);
-          await repo.acceptTerms(driverId);
+      // Caminho rápido (toda vez que o servidor sobe, inclusive na Vercel): uma consulta só confere se já está tudo lá
+      const demo = `%@${DEMO_DOMAIN}`;
+      const status = (await get<{ drivers: number; students: number; rides: number; links: number; colleges: number }>(
+        `SELECT (SELECT COUNT(*) FROM drivers WHERE email LIKE ?) AS drivers,
+                (SELECT COUNT(*) FROM students WHERE email LIKE ?) AS students,
+                (SELECT COUNT(*) FROM bookings b JOIN students s ON s.id = b.student_id
+                   WHERE s.email LIKE ? AND b.status <> 'Cancelado') AS rides,
+                (SELECT COUNT(*) FROM driver_colleges dc JOIN drivers d ON d.id = dc.driver_id WHERE d.email LIKE ?) AS links,
+                (SELECT COUNT(*) FROM colleges) AS colleges`,
+        [demo, demo, demo, demo],
+      ))!;
+      const studentCount = demoDrivers.reduce((total, driver) => total + driver.students.length, 0);
+      if (
+        status.drivers === demoDrivers.length &&
+        status.students === studentCount &&
+        status.rides === studentCount &&
+        status.links === demoDrivers.length * status.colleges
+      )
+        return;
+
+      // Falta algo: cria tudo de uma vez, num único pedido ao banco (no Turso cada consulta é uma ida e volta
+      // pela internet, e centenas delas estouravam o tempo da função na Vercel). Tudo é "se ainda não existir".
+      const missing = async (table: "drivers" | "students", email: string) =>
+        !(await get(`SELECT 1 AS found FROM ${table} WHERE email = ?`, [email]));
+      // endereço informado pelo projeto: tenta o mapa (só na criação); senão, a posição fixa de demo.ts
+      const pointOf = async (place: DemoPlace, table: "drivers" | "students", email: string): Promise<Point> =>
+        (place.geocode && (await missing(table, email)) ? await locate(place.address) : null) ?? {
+          lat: place.lat,
+          lng: place.lng,
+        };
+      const passwordHash =
+        status.drivers < demoDrivers.length || status.students < studentCount ? hashPasswordSync(DEMO_PASSWORD) : null;
+      const statements: InStatement[] = [];
+      for (const driver of demoDrivers) {
+        const start = await pointOf(driver.start, "drivers", driver.email);
+        statements.push({
+          sql: `INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, return_time,
+                  start_address, start_lat, start_lng, rating, password_hash, terms_version, terms_accepted_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT DO NOTHING`,
+          args: [
+            driver.name,
+            driver.phone,
+            driver.email,
+            driver.vanModel,
+            driver.plate,
+            driver.capacity,
+            driver.departureTime,
+            driver.returnTime,
+            driver.start.address,
+            start.lat,
+            start.lng,
+            driver.rating,
+            passwordHash,
+            TERMS_VERSION,
+          ],
+        });
+        for (const [position, city] of driver.cities.entries()) {
+          statements.push({
+            sql: "INSERT OR IGNORE INTO driver_cities (driver_id, position, city) SELECT id, ?, ? FROM drivers WHERE email = ?",
+            args: [position, city, driver.email],
+          });
         }
-        for (const student of demo.students) {
-          let studentId = (await get<{ id: number }>("SELECT id FROM students WHERE email = ?", [student.email]))?.id;
-          if (studentId === undefined) {
-            try {
-              studentId = (
-                await repo.createStudent({
-                  name: student.name,
-                  phone: "(15) 90000-0000",
-                  email: student.email,
-                  address: student.address,
-                  college: DEMO_COLLEGE,
-                  passwordHash: hash(),
-                })
-              ).id;
-            } catch (error) {
-              if (!(error instanceof ApiError && error.status === 409)) throw error;
-              continue;
-            }
-            const point = await pointOf(student);
-            await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [point.lat, point.lng, studentId]);
-          }
+        for (const student of driver.students) {
+          const point = await pointOf(student, "students", student.email);
+          statements.push({
+            sql: `INSERT INTO students (name, phone, email, address, college_id, password_hash, lat, lng)
+                  SELECT ?, '(15) 90000-0000', ?, ?, id, ?, ?, ? FROM colleges WHERE name = ? ON CONFLICT DO NOTHING`,
+            args: [student.name, student.email, student.address, passwordHash, point.lat, point.lng, DEMO_COLLEGE],
+          });
           // aluno de demonstração sem van (ex.: cancelou durante a apresentação) volta para a van dele
-          if (!(await activeBooking(studentId))) {
-            try {
-              await run("INSERT INTO bookings (student_id, driver_id, pickup, status) VALUES (?, ?, ?, 'Confirmado')", [
-                studentId,
-                driverId,
-                student.address,
-              ]);
-            } catch (error) {
-              if (!(error instanceof Error && error.message.includes("UNIQUE"))) throw error;
-              await run(
-                "UPDATE bookings SET status = 'Confirmado', pickup = ? WHERE student_id = ? AND driver_id = ?",
-                [student.address, studentId, driverId],
-              );
-            }
-          }
+          statements.push({
+            sql: `INSERT INTO bookings (student_id, driver_id, pickup, status)
+                  SELECT s.id, d.id, ?, 'Confirmado' FROM students s, drivers d
+                  WHERE s.email = ? AND d.email = ?
+                    AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.student_id = s.id AND b.status <> 'Cancelado')
+                  ON CONFLICT (student_id, driver_id) DO UPDATE SET status = 'Confirmado', pickup = excluded.pickup`,
+            args: [student.address, student.email, driver.email],
+          });
         }
       }
       // motoristas de demonstração atendem todas as faculdades, inclusive as cadastradas depois
-      await run(
-        `INSERT OR IGNORE INTO driver_colleges (driver_id, college_id)
-                 SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`,
-        [`%@${DEMO_DOMAIN}`],
-      );
+      statements.push({
+        sql: `INSERT OR IGNORE INTO driver_colleges (driver_id, college_id)
+              SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`,
+        args: [demo],
+      });
+      await db.batch(statements, "write");
     },
   };
 
