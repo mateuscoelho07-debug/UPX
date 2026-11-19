@@ -1,0 +1,6 @@
+# Arquivos do sistema e de editores (os do site ficam em site/.gitignore)
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

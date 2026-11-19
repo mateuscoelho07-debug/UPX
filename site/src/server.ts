@@ -1,6 +1,11 @@
 // Servidor do RotaU (Angular SSR + Express): atende a API (/api/*) e entrega as páginas do Angular.
 // No computador roda com `pnpm dev`; na Vercel, a função api/index.js chama o reqHandler daqui.
-import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from "@angular/ssr/node";
+import {
+  AngularNodeAppEngine,
+  createNodeRequestHandler,
+  isMainModule,
+  writeResponseToNodeResponse,
+} from "@angular/ssr/node";
 import express from "express";
 import { join } from "node:path";
 import { createApp } from "./server/api.ts";
