@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS drivers (
   capacity       INTEGER NOT NULL DEFAULT 12 CHECK (capacity > 0),
   departure_time TEXT NOT NULL DEFAULT '17:30',  -- saída da ida (busca os estudantes)
   return_time    TEXT,                           -- saída da volta (nulo = a combinar)
+  start_address  TEXT,                           -- endereço de saída da van (casa do motorista): início da ida
+  start_lat      REAL,                           -- posição desse endereço (nula = aproximada pelo bairro/cidade)
+  start_lng      REAL,
   subscription_until  TEXT,                      -- assinatura em dia até esta data (AAAA-MM-DD); nulo = nunca assinou
   subscription_notice TEXT,                      -- último aviso de vencimento enviado (evita repetir)
   terms_version  TEXT,                           -- versão dos termos que o motorista aceitou (nulo = não aceitou)
@@ -116,6 +119,7 @@ CREATE TABLE IF NOT EXISTS route_runs (
   day        TEXT NOT NULL,
   leg        TEXT NOT NULL CHECK (leg IN ('ida', 'volta')),
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT,  -- quando o motorista finalizou a viagem (nulo = em andamento)
   PRIMARY KEY (driver_id, day, leg)
 );
 
@@ -128,6 +132,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   body       TEXT NOT NULL,
   read_at    TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ajustes de dados que rodam uma vez só por banco (ex.: apagar os motoristas antigos)
+CREATE TABLE IF NOT EXISTS data_migrations (
+  name       TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_attendance_driver_day ON attendance(driver_id, day);
