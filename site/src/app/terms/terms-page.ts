@@ -26,14 +26,20 @@ import { Icon } from "../shared/icon";
             }
             @if (section.bullets) {
               <ul class="mt-3 list-disc space-y-1 pl-6 leading-7 text-slate-700">
-                @for (bullet of section.bullets; track bullet) { <li>{{ bullet }}</li> }
+                @for (bullet of section.bullets; track bullet) {
+                  <li>{{ bullet }}</li>
+                }
               </ul>
             }
           </section>
         }
-        <p class="mt-10 text-sm text-slate-500">Motoristas: o PDF com a sua assinatura digital de aceite é exportado no seu painel.</p>
+        <p class="mt-10 text-sm text-slate-500">
+          Motoristas: o PDF com a sua assinatura digital de aceite é exportado no seu painel.
+        </p>
       } @else if (failed()) {
-        <p class="mt-6 rounded-xl bg-red-50 p-4 text-red-800">Não foi possível carregar os termos agora. Tente de novo em instantes.</p>
+        <p class="mt-6 rounded-xl bg-red-50 p-4 text-red-800">
+          Não foi possível carregar os termos agora. Tente de novo em instantes.
+        </p>
       } @else {
         <p class="mt-6 text-slate-500">Carregando...</p>
       }
@@ -46,6 +52,9 @@ export default class TermsPage {
   readonly failed = signal(false);
 
   constructor() {
-    this.api.terms().then((doc) => this.doc.set(doc), () => this.failed.set(true));
+    this.api.terms().then(
+      (doc) => this.doc.set(doc),
+      () => this.failed.set(true),
+    );
   }
 }

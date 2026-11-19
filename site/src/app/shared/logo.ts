@@ -1,3 +1,4 @@
+// Logotipo do RotaU (imagem + nome). Conteúdo extra pode ser projetado ao lado.
 import { ChangeDetectionStrategy, Component } from "@angular/core";
 
 @Component({

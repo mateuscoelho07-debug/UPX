@@ -102,7 +102,14 @@ export type Passenger = {
 
 export type Leg = "ida" | "volta";
 // `predicted`: a previsão vem do horário programado (a van ainda não saiu)
-export type TodayLeg = { leg: Leg; scheduled: string | null; startedAt: string | null; eta: string | null; predicted: boolean; rideMinutes?: number | null };
+export type TodayLeg = {
+  leg: Leg;
+  scheduled: string | null;
+  startedAt: string | null;
+  eta: string | null;
+  predicted: boolean;
+  rideMinutes?: number | null;
+};
 
 // Rota calculada pelos endereços de quem vai hoje
 export type RouteStop = { studentId: number; name: string; pickup: string; order: number; eta: string | null };
@@ -140,10 +147,28 @@ export type StudentToday = {
   legs: TodayLeg[];
 };
 
-export type DriverDashboardData = { driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: Subscription; documents: DriverDocument[]; terms: DriverTerms };
+export type DriverDashboardData = {
+  driver: Driver;
+  passengers: Passenger[];
+  mainDestination: string;
+  today: DriverToday;
+  subscription: Subscription;
+  documents: DriverDocument[];
+  terms: DriverTerms;
+};
 
-export type DriverTerms = { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean };
-export type TermsDocument = { version: string; updatedAt: string; intro: string; sections: { title: string; paragraphs: string[]; bullets?: string[] }[] };
+export type DriverTerms = {
+  version: string;
+  acceptedVersion: string | null;
+  acceptedAt: string | null;
+  accepted: boolean;
+};
+export type TermsDocument = {
+  version: string;
+  updatedAt: string;
+  intro: string;
+  sections: { title: string; paragraphs: string[]; bullets?: string[] }[];
+};
 
 export type Session = { profile: "student" | "driver" | "admin"; id: number; name: string };
 
@@ -161,7 +186,14 @@ export type AdminOverview = {
   searches: AdminRow[];
 };
 
-export type StudentSignup = { name: string; phone: string; email: string; password: string; address: string; college: string };
+export type StudentSignup = {
+  name: string;
+  phone: string;
+  email: string;
+  password: string;
+  address: string;
+  college: string;
+};
 export type DriverSignup = {
   name: string;
   phone: string;
@@ -202,7 +234,8 @@ export class ApiService {
       return await firstValueFrom(call);
     } catch (err) {
       if (err instanceof HttpErrorResponse) {
-        if (err.status === 0) throw new ApiRequestError(0, "Não foi possível conectar ao servidor. Verifique se a API está rodando.");
+        if (err.status === 0)
+          throw new ApiRequestError(0, "Não foi possível conectar ao servidor. Verifique se a API está rodando.");
         const message = typeof err.error?.error === "string" ? err.error.error : `Erro ${err.status}`;
         throw new ApiRequestError(err.status, message);
       }
@@ -211,7 +244,8 @@ export class ApiService {
   }
 
   colleges = () => this.request<College[]>("GET", "/colleges");
-  search = (address: string, college: string) => this.request<{ college: string; count: number }>("POST", "/searches", { address, college });
+  search = (address: string, college: string) =>
+    this.request<{ college: string; count: number }>("POST", "/searches", { address, college });
   me = () => this.request<Session>("GET", "/auth/me");
   login = (profile: "student" | "driver", email: string, password: string) =>
     this.request<Session>("POST", "/auth/login", { profile, email, password });
@@ -224,7 +258,8 @@ export class ApiService {
   documents = (id: number) => this.request<DriverDocument[]>("GET", `/drivers/${id}/documents`);
   uploadDocument = (id: number, kind: DocumentKind, filename: string, data: string) =>
     this.request<DriverDocument[]>("PUT", `/drivers/${id}/documents/${kind}`, { filename, data });
-  deleteDocument = (id: number, kind: DocumentKind) => this.request<DriverDocument[]>("DELETE", `/drivers/${id}/documents/${kind}`);
+  deleteDocument = (id: number, kind: DocumentKind) =>
+    this.request<DriverDocument[]>("DELETE", `/drivers/${id}/documents/${kind}`);
   terms = () => this.request<TermsDocument>("GET", "/terms");
   acceptTerms = (id: number) => this.request<unknown>("POST", `/drivers/${id}/terms-acceptance`);
   subscribe = (id: number) => this.request<Subscription>("POST", `/drivers/${id}/subscription`);
@@ -233,8 +268,13 @@ export class ApiService {
   vanDetail = (id: number) => this.request<VanDetail>("GET", `/vans/${id}`);
   // replace: troca a van atual por esta (cada estudante fica em uma van só)
   book = (driverId: number, replace = false) =>
-    this.request<{ id: number; status: BookingStatus }>("POST", "/bookings", replace ? { driverId, replace } : { driverId });
-  cancelBooking = (bookingId: number) => this.request<{ id: number; status: BookingStatus }>("POST", `/bookings/${bookingId}/cancel`);
+    this.request<{ id: number; status: BookingStatus }>(
+      "POST",
+      "/bookings",
+      replace ? { driverId, replace } : { driverId },
+    );
+  cancelBooking = (bookingId: number) =>
+    this.request<{ id: number; status: BookingStatus }>("POST", `/bookings/${bookingId}/cancel`);
   updateBooking = (id: number, data: { status?: BookingStatus; pickupTime?: string | null }) =>
     this.request<unknown>("PATCH", `/bookings/${id}`, data);
   today = () => this.request<StudentToday>("GET", "/attendance/today");

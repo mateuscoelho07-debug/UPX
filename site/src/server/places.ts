@@ -8,24 +8,24 @@ type Place = { name: string; point: Point; aliases?: string[] };
 const places: Place[] = [
   { name: "Sorocaba (Centro)", point: { lat: -23.5015, lng: -47.4526 }, aliases: ["centro"] },
   { name: "Vila Hortência", point: { lat: -23.4975, lng: -47.4405 } },
-  { name: "Jd. Faculdade", point: { lat: -23.4890, lng: -47.4380 }, aliases: ["jardim faculdade"] },
-  { name: "Sorocaba (Zona Norte)", point: { lat: -23.4590, lng: -47.4580 }, aliases: ["zona norte"] },
-  { name: "Éden", point: { lat: -23.4310, lng: -47.4160 }, aliases: ["eden"] },
-  { name: "Itavuvu", point: { lat: -23.4640, lng: -47.5010 } },
-  { name: "Sorocaba (Zona Sul)", point: { lat: -23.5420, lng: -47.4620 }, aliases: ["zona sul"] },
-  { name: "Campolim", point: { lat: -23.5330, lng: -47.4880 } },
-  { name: "Jd. Europa", point: { lat: -23.5240, lng: -47.4740 }, aliases: ["jardim europa"] },
-  { name: "Sorocaba (Zona Leste)", point: { lat: -23.4880, lng: -47.4100 }, aliases: ["zona leste"] },
-  { name: "Brigadeiro Tobias", point: { lat: -23.4540, lng: -47.3880 } },
-  { name: "Sorocaba (Zona Oeste)", point: { lat: -23.5000, lng: -47.5000 }, aliases: ["zona oeste"] },
-  { name: "Wanel Ville", point: { lat: -23.4790, lng: -47.5130 } },
+  { name: "Jd. Faculdade", point: { lat: -23.489, lng: -47.438 }, aliases: ["jardim faculdade"] },
+  { name: "Sorocaba (Zona Norte)", point: { lat: -23.459, lng: -47.458 }, aliases: ["zona norte"] },
+  { name: "Éden", point: { lat: -23.431, lng: -47.416 }, aliases: ["eden"] },
+  { name: "Itavuvu", point: { lat: -23.464, lng: -47.501 } },
+  { name: "Sorocaba (Zona Sul)", point: { lat: -23.542, lng: -47.462 }, aliases: ["zona sul"] },
+  { name: "Campolim", point: { lat: -23.533, lng: -47.488 } },
+  { name: "Jd. Europa", point: { lat: -23.524, lng: -47.474 }, aliases: ["jardim europa"] },
+  { name: "Sorocaba (Zona Leste)", point: { lat: -23.488, lng: -47.41 }, aliases: ["zona leste"] },
+  { name: "Brigadeiro Tobias", point: { lat: -23.454, lng: -47.388 } },
+  { name: "Sorocaba (Zona Oeste)", point: { lat: -23.5, lng: -47.5 }, aliases: ["zona oeste"] },
+  { name: "Wanel Ville", point: { lat: -23.479, lng: -47.513 } },
   { name: "Sorocaba", point: { lat: -23.5015, lng: -47.4526 } },
   { name: "Votorantim", point: { lat: -23.5466, lng: -47.4378 } },
   { name: "Salto de Pirapora", point: { lat: -23.6469, lng: -47.5731 } },
   { name: "Piedade", point: { lat: -23.7131, lng: -47.4275 } },
   { name: "Pilar do Sul", point: { lat: -23.8097, lng: -47.7186 } },
-  { name: "Itu", point: { lat: -23.2640, lng: -47.2993 } },
-  { name: "Salto", point: { lat: -23.2000, lng: -47.2869 } },
+  { name: "Itu", point: { lat: -23.264, lng: -47.2993 } },
+  { name: "Salto", point: { lat: -23.2, lng: -47.2869 } },
   { name: "Porto Feliz", point: { lat: -23.2142, lng: -47.5239 } },
   { name: "Boituva", point: { lat: -23.2853, lng: -47.6786 } },
   { name: "Cerquilho", point: { lat: -23.1664, lng: -47.7456 } },
@@ -45,27 +45,34 @@ const places: Place[] = [
 // Campus aproximado de cada faculdade (para onde a van vai na ida e de onde sai na volta)
 const colleges: Record<string, Point> = {
   unifacens: { lat: -23.4844, lng: -47.4286 },
-  fatec: { lat: -23.4920, lng: -47.4560 },
+  fatec: { lat: -23.492, lng: -47.456 },
   ufscar: { lat: -23.5817, lng: -47.5236 },
   uniso: { lat: -23.4676, lng: -47.4947 },
-  unip: { lat: -23.4895, lng: -47.4160 },
+  unip: { lat: -23.4895, lng: -47.416 },
   unesp: { lat: -23.4937, lng: -47.4753 },
-  ifsp: { lat: -23.4856, lng: -47.4560 },
+  ifsp: { lat: -23.4856, lng: -47.456 },
   "puc-sp": { lat: -23.4944, lng: -47.4586 },
-  anhanguera: { lat: -23.4834, lng: -47.4590 },
-  esamc: { lat: -23.4820, lng: -47.4418 },
+  anhanguera: { lat: -23.4834, lng: -47.459 },
+  esamc: { lat: -23.482, lng: -47.4418 },
   fadi: { lat: -23.4975, lng: -47.4545 },
-  ceunsp: { lat: -23.2000, lng: -47.2900 },
+  ceunsp: { lat: -23.2, lng: -47.29 },
 };
 
 // Sem acentos, minúsculas e sem pontuação: "Jd. Européia" ≈ "jd europeia"
 function normalize(value: string): string {
-  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
-    .replace(/\bjd\b\.?/g, "jardim").replace(/[^a-z0-9]+/g, " ").trim();
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\bjd\b\.?/g, "jardim")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 const index = places
-  .flatMap((place) => [place.name, ...(place.aliases ?? [])].map((alias) => ({ alias: normalize(alias), point: place.point })))
+  .flatMap((place) =>
+    [place.name, ...(place.aliases ?? [])].map((alias) => ({ alias: normalize(alias), point: place.point })),
+  )
   // nomes maiores primeiro, para "Vila Hortência" ganhar de "Centro"/"Sorocaba"
   .sort((a, b) => b.alias.length - a.alias.length);
 

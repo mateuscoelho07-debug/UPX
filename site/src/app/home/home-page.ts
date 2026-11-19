@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, Component, afterNextRender, inject, signal } from "@angular/core";
 import { Router } from "@angular/router";
+import { defaultColleges } from "../../shared/colleges";
 import { ApiService, type Session } from "../api.service";
 import { Field } from "../shared/field";
+import { firstName } from "../shared/format";
 import { Icon, type IconName } from "../shared/icon";
 import { Logo } from "../shared/logo";
-
-const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip", "Unesp", "IFSP", "PUC-SP", "Anhanguera", "ESAMC", "Fadi", "Ceunsp"];
 
 type Profile = "student" | "driver";
 
@@ -21,9 +21,24 @@ export default class HomePage {
   private readonly router = inject(Router);
 
   readonly steps: { number: string; icon: IconName; title: string; text: string }[] = [
-    { number: "01", icon: "location", title: "Informe seu endereço", text: "Conte onde você mora e qual faculdade frequenta." },
-    { number: "02", icon: "route", title: "Compare as rotas", text: "Veja vans que passam perto, horários e instituições atendidas." },
-    { number: "03", icon: "bus", title: "Escolha e vá tranquilo", text: "Confirme todo dia se você vai e receba o aviso quando a van sair." },
+    {
+      number: "01",
+      icon: "location",
+      title: "Informe seu endereço",
+      text: "Conte onde você mora e qual faculdade frequenta.",
+    },
+    {
+      number: "02",
+      icon: "route",
+      title: "Compare as rotas",
+      text: "Veja vans que passam perto, horários e instituições atendidas.",
+    },
+    {
+      number: "03",
+      icon: "bus",
+      title: "Escolha e vá tranquilo",
+      text: "Confirme todo dia se você vai e receba o aviso quando a van sair.",
+    },
   ];
 
   readonly modalOpen = signal(false);
@@ -60,9 +75,7 @@ export default class HomePage {
     });
   }
 
-  firstName(name: string) {
-    return name.split(" ")[0];
-  }
+  readonly firstName = firstName;
 
   openSignup(type: Profile, modalMode: "signup" | "login" = "signup") {
     this.profile.set(type);
@@ -110,22 +123,30 @@ export default class HomePage {
     this.submitting.set(true);
     this.signupError.set(null);
     try {
-      const created = profile === "student"
-        ? await this.api.createStudent({ name: field("name"), phone: field("phone"), email: field("email"), password, address: field("address"), college: field("college") })
-        : await this.api.createDriver({
-            name: field("name"),
-            phone: field("phone"),
-            email: field("email"),
-            password,
-            vanModel: field("vanModel"),
-            plate: field("plate"),
-            capacity: Number(field("capacity")),
-            departureTime: field("departureTime"),
-            returnTime: field("returnTime"),
-            cities: field("cities"),
-            colleges: field("colleges"),
-            acceptTerms: true, // o checkbox do formulário é obrigatório
-          });
+      const created =
+        profile === "student"
+          ? await this.api.createStudent({
+              name: field("name"),
+              phone: field("phone"),
+              email: field("email"),
+              password,
+              address: field("address"),
+              college: field("college"),
+            })
+          : await this.api.createDriver({
+              name: field("name"),
+              phone: field("phone"),
+              email: field("email"),
+              password,
+              vanModel: field("vanModel"),
+              plate: field("plate"),
+              capacity: Number(field("capacity")),
+              departureTime: field("departureTime"),
+              returnTime: field("returnTime"),
+              cities: field("cities"),
+              colleges: field("colleges"),
+              acceptTerms: true, // o checkbox do formulário é obrigatório
+            });
       this.session.set({ profile, id: created.id, name: created.name });
       this.registered.set(true);
     } catch (err) {
@@ -141,7 +162,11 @@ export default class HomePage {
     this.submitting.set(true);
     this.signupError.set(null);
     try {
-      const me = await this.api.login(this.profile(), String(form.get("email") ?? "").trim(), String(form.get("password") ?? ""));
+      const me = await this.api.login(
+        this.profile(),
+        String(form.get("email") ?? "").trim(),
+        String(form.get("password") ?? ""),
+      );
       this.session.set(me);
       this.openDashboard();
     } catch (err) {

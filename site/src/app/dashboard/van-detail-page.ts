@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, input, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { ApiRequestError, ApiService, type StudentToday, type VanDetail } from "../api.service";
+import { formatRating } from "../shared/format";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
 import { PresenceCard } from "./presence-card";
@@ -55,9 +56,7 @@ export default class VanDetailPage {
     this.router.navigate(["/"]);
   }
 
-  rating(value: number) {
-    return value.toFixed(1).replace(".", ",");
-  }
+  readonly rating = formatRating;
 
   async book(replace: boolean) {
     this.actionError.set(null);

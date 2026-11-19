@@ -1,3 +1,4 @@
+// Ponto de entrada do front end no navegador: inicia o app Angular.
 import { bootstrapApplication } from "@angular/platform-browser";
 import { appConfig } from "./app/app.config";
 import { App } from "./app/app";

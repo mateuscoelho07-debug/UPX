@@ -19,7 +19,8 @@ const MAX_MEMORY = 64 * 1024 * 1024;
 function deriveKey(password: string, salt: Buffer, options: ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     scrypt(password.normalize("NFKC"), salt, KEY_LENGTH, { ...options, maxmem: MAX_MEMORY }, (error, key) =>
-      error ? reject(error) : resolve(key));
+      error ? reject(error) : resolve(key),
+    );
   });
 }
 
@@ -45,7 +46,10 @@ export async function hashPassword(password: string): Promise<string> {
 // Versão síncrona, usada só para criar os dados de exemplo
 export function hashPasswordSync(password: string): string {
   const salt = randomBytes(16);
-  return formatHash(salt, scryptSync(password.normalize("NFKC"), salt, KEY_LENGTH, { ...scryptParams, maxmem: MAX_MEMORY }));
+  return formatHash(
+    salt,
+    scryptSync(password.normalize("NFKC"), salt, KEY_LENGTH, { ...scryptParams, maxmem: MAX_MEMORY }),
+  );
 }
 
 // Hash usado quando o e-mail não existe, para a resposta levar o mesmo tempo
