@@ -1,3 +1,4 @@
+// Cabeçalho dos painéis: logo, perfil, sino de avisos, voltar ao início e sair.
 import { ChangeDetectionStrategy, Component, input, output } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { Logo } from "../shared/logo";
@@ -17,7 +18,9 @@ import { NotificationBell } from "./notification-bell";
           </span>
           <app-notification-bell (changed)="notified.emit()" />
           <a class="btn-secondary !px-4 !py-2.5 text-sm" routerLink="/">Voltar ao início</a>
-          <button class="text-sm font-semibold text-slate-500 hover:text-slate-800" (click)="logout.emit()">Sair</button>
+          <button class="text-sm font-semibold text-slate-500 hover:text-slate-800" (click)="logout.emit()">
+            Sair
+          </button>
         </div>
       </div>
     </header>

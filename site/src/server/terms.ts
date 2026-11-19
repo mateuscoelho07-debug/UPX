@@ -29,7 +29,7 @@ export const termsDocument: TermsDocument = {
       bullets: [
         "Tratar todas as pessoas com respeito, sem ofensas, discriminação, assédio ou violência de qualquer tipo.",
         "Ser pontual: o estudante deve estar no ponto de embarque no horário combinado, e o motorista deve avisar atrasos.",
-        "Avisar pela plataforma quando não for usar a van no dia (botão \"Não vou hoje\"), para que a rota seja ajustada.",
+        'Avisar pela plataforma quando não for usar a van no dia (botão "Não vou hoje"), para que a rota seja ajustada.',
         "Manter o veículo limpo e respeitar o espaço e o sossego dos demais passageiros (volume de som e conversas moderados).",
         "Não consumir bebidas alcoólicas, cigarros ou outras substâncias dentro da van, e nunca embarcar ou dirigir sob efeito delas.",
         "Cuidar dos pertences: cada pessoa é responsável pelos seus objetos.",
@@ -50,7 +50,7 @@ export const termsDocument: TermsDocument = {
       paragraphs: ["A promessa do RotaU é uma rota segura. Para isso, o motorista se compromete a:"],
       bullets: [
         "Ter Carteira Nacional de Habilitação (CNH) válida na categoria exigida e enviar uma cópia pelo RotaU.",
-        "Manter o veículo com o Certificado de Registro e Licenciamento de Veículo (CRLV) em dia e enviar uma cópia pelo RotaU. Os documentos ficam visíveis só para o próprio motorista; os estudantes veem apenas o selo \"documentos enviados\".",
+        'Manter o veículo com o Certificado de Registro e Licenciamento de Veículo (CRLV) em dia e enviar uma cópia pelo RotaU. Os documentos ficam visíveis só para o próprio motorista; os estudantes veem apenas o selo "documentos enviados".',
         "Respeitar a lotação do veículo e exigir o uso do cinto de segurança por todos os passageiros.",
         "Respeitar o Código de Trânsito Brasileiro, os limites de velocidade e não usar o celular enquanto dirige.",
         "Fazer a manutenção do veículo e não circular com problemas que coloquem os passageiros em risco.",
@@ -62,7 +62,7 @@ export const termsDocument: TermsDocument = {
       paragraphs: [
         "O RotaU trata os dados pessoais de acordo com a Lei Geral de Proteção de Dados (Lei 13.709/2018). Coletamos apenas o necessário para o serviço: nome, telefone, e-mail, endereço de embarque e faculdade do estudante, e nome, contato, dados da van e documentos do motorista.",
         "O endereço do estudante é usado para calcular a rota e é visto pelo motorista da van escolhida. O telefone do motorista só aparece para o estudante que reservou vaga. Os documentos do motorista (CNH e CRLV) ficam armazenados com acesso restrito ao próprio motorista e não são mostrados a outras pessoas.",
-        "Não vendemos dados pessoais. Cada pessoa pode pedir acesso, correção ou exclusão dos seus dados e pode excluir a própria conta no painel (\"Excluir minha conta\"), o que apaga seus dados da plataforma.",
+        'Não vendemos dados pessoais. Cada pessoa pode pedir acesso, correção ou exclusão dos seus dados e pode excluir a própria conta no painel ("Excluir minha conta"), o que apaga seus dados da plataforma.',
       ],
     },
     {
@@ -81,11 +81,21 @@ export const termsDocument: TermsDocument = {
   ],
 };
 
-export type DriverAcceptance = { name: string; email: string; id: number; version: string | null; acceptedAt: string | null };
+export type DriverAcceptance = {
+  name: string;
+  email: string;
+  id: number;
+  version: string | null;
+  acceptedAt: string | null;
+};
 
 // Código curto que identifica o registro de aceite (o mesmo aceite sempre gera o mesmo código)
 export function acceptanceCode(driver: { id: number; email: string }, version: string, acceptedAt: string): string {
-  const hash = createHash("sha256").update(`${driver.id}|${driver.email.toLowerCase()}|${version}|${acceptedAt}`).digest("hex").slice(0, 16).toUpperCase();
+  const hash = createHash("sha256")
+    .update(`${driver.id}|${driver.email.toLowerCase()}|${version}|${acceptedAt}`)
+    .digest("hex")
+    .slice(0, 16)
+    .toUpperCase();
   return hash.match(/.{4}/g)!.join("-");
 }
 
@@ -110,21 +120,33 @@ export function termsPdf(driver?: DriverAcceptance): Buffer {
   }
   blocks.push({ kind: "keep", height: 190 }, { kind: "heading", text: "Assinatura digital de aceite do motorista" });
   if (!driver) {
-    blocks.push({ kind: "paragraph", text: "Este documento foi exportado sem escolher uma van, por isso não traz o aceite de nenhum motorista. Para exportar com a assinatura digital do motorista, use o botão da sua van na página Termos e Segurança, depois de entrar na sua conta de estudante." });
+    blocks.push({
+      kind: "paragraph",
+      text: "Este documento foi exportado sem escolher uma van, por isso não traz o aceite de nenhum motorista. Para exportar com a assinatura digital do motorista, use o botão da sua van na página Termos e Segurança, depois de entrar na sua conta de estudante.",
+    });
   } else if (driver.version === TERMS_VERSION && driver.acceptedAt) {
     blocks.push(
       { kind: "label", text: `Motorista: ${driver.name}` },
       { kind: "paragraph", text: `E-mail cadastrado: ${driver.email}` },
-      { kind: "paragraph", text: `Aceite registrado em ${formatAcceptance(driver.acceptedAt)} (horário de Brasília), versão ${driver.version} dos termos.` },
+      {
+        kind: "paragraph",
+        text: `Aceite registrado em ${formatAcceptance(driver.acceptedAt)} (horário de Brasília), versão ${driver.version} dos termos.`,
+      },
       { kind: "label", text: `Código de verificação: ${acceptanceCode(driver, driver.version, driver.acceptedAt)}` },
-      { kind: "paragraph", text: "O motorista aceitou digitalmente estes termos dentro do RotaU, autenticado com a conta e a senha dele." },
+      {
+        kind: "paragraph",
+        text: "O motorista aceitou digitalmente estes termos dentro do RotaU, autenticado com a conta e a senha dele.",
+      },
     );
   } else {
     blocks.push(
       { kind: "label", text: `Motorista: ${driver.name}` },
-      { kind: "paragraph", text: driver.acceptedAt
-        ? `O motorista aceitou uma versão anterior (${driver.version}) destes termos e ainda não registrou o aceite da versão atual (${TERMS_VERSION}).`
-        : "O motorista ainda não registrou o aceite digital destes termos." },
+      {
+        kind: "paragraph",
+        text: driver.acceptedAt
+          ? `O motorista aceitou uma versão anterior (${driver.version}) destes termos e ainda não registrou o aceite da versão atual (${TERMS_VERSION}).`
+          : "O motorista ainda não registrou o aceite digital destes termos.",
+      },
     );
   }
   return buildPdf(blocks, `RotaU - Termos v${TERMS_VERSION}`, "Termos de Segurança e Conduta - RotaU");

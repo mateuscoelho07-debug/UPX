@@ -6,13 +6,20 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ApiError } from "./errors.ts";
+import { defaultColleges } from "../shared/colleges.ts";
 import { hashPasswordSync, type Profile, type SessionUser } from "./auth.ts";
 import { schema } from "./schema.ts";
 import { coringaStudents, demoStudents } from "./demo.ts";
 import { geocode } from "./geocode.ts";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
 import { planRoute, type Point, type RoutePlan } from "./route.ts";
-import { isSubscriptionActive, renewedUntil, subscriptionConfig, subscriptionInfo, type SubscriptionInfo } from "./subscription.ts";
+import {
+  isSubscriptionActive,
+  renewedUntil,
+  subscriptionConfig,
+  subscriptionInfo,
+  type SubscriptionInfo,
+} from "./subscription.ts";
 import { DOCUMENT_KINDS, documentKind, type DocumentKind, type DocumentMime } from "./documents.ts";
 import { TERMS_VERSION, type DriverAcceptance } from "./terms.ts";
 import { addMinutes, clockPlus, fromSqlTime, localDay, localTime, weekdayOf } from "./time.ts";
@@ -56,7 +63,13 @@ export type Driver = {
   documentsSent: boolean;
 };
 
-export type DriverDocument = { kind: DocumentKind; filename: string; mime: DocumentMime; size: number; uploadedAt: string };
+export type DriverDocument = {
+  kind: DocumentKind;
+  filename: string;
+  mime: DocumentMime;
+  size: number;
+  uploadedAt: string;
+};
 
 export type Van = {
   id: number;
@@ -135,7 +148,9 @@ export type DriverInput = {
   passwordHash?: string;
 };
 
-type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats" | "subscriptionActive" | "documentsSent"> & { documentCount: number } & { cities: string | null; colleges: string | null };
+type DriverRow = Omit<Driver, "cities" | "colleges" | "freeSeats" | "subscriptionActive" | "documentsSent"> & {
+  documentCount: number;
+} & { cities: string | null; colleges: string | null };
 
 export type Leg = "ida" | "volta";
 export const legs: Leg[] = ["ida", "volta"];
@@ -216,10 +231,15 @@ export async function openDatabase(
 // Bancos antigos não têm as colunas novas: senha (login) e horário da volta (presença)
 async function migrate(db: Client) {
   const columns: [string, string, string][] = [
-    ["students", "password_hash", "TEXT"], ["drivers", "password_hash", "TEXT"], ["drivers", "return_time", "TEXT"],
-    ["students", "lat", "REAL"], ["students", "lng", "REAL"],
-    ["drivers", "subscription_until", "TEXT"], ["drivers", "subscription_notice", "TEXT"],
-    ["drivers", "terms_version", "TEXT"], ["drivers", "terms_accepted_at", "TEXT"],
+    ["students", "password_hash", "TEXT"],
+    ["drivers", "password_hash", "TEXT"],
+    ["drivers", "return_time", "TEXT"],
+    ["students", "lat", "REAL"],
+    ["students", "lng", "REAL"],
+    ["drivers", "subscription_until", "TEXT"],
+    ["drivers", "subscription_notice", "TEXT"],
+    ["drivers", "terms_version", "TEXT"],
+    ["drivers", "terms_accepted_at", "TEXT"],
   ];
   for (const [table, column, type] of columns) {
     const { rows } = await db.execute(`PRAGMA table_info(${table})`);
@@ -232,6 +252,7 @@ async function migrate(db: Client) {
 // Senha das contas de exemplo criadas pelo seed (ver README)
 export const DEMO_PASSWORD = "rotau1234";
 
+// Converte o caminho do arquivo local em URL file:// (formato que o libSQL espera), criando a pasta se preciso
 function localUrl(file: string): string {
   mkdirSync(path.dirname(file), { recursive: true });
   return pathToFileURL(file).href;
@@ -246,38 +267,131 @@ function text(data: Record<string, unknown>, field: string): string {
   return String(value).trim();
 }
 
+// Aceita lista ou texto separado por vírgulas ("Itu, Salto") e devolve itens únicos, sem espaços extras
 function splitList(value: unknown): string[] {
   const items = Array.isArray(value) ? value : String(value ?? "").split(",");
   return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
 }
 
-// Faculdades da região de Sorocaba (os 5 primeiros nomes já existem nos bancos publicados; não renomear).
-// Unesp, IFSP, PUC-SP e Ceunsp têm campi na região (Sorocaba, Itu/Salto e cidades vizinhas).
-export const defaultColleges = ["UniFacens", "Fatec", "Ufscar", "Uniso", "Unip", "Unesp", "IFSP", "PUC-SP", "Anhanguera", "ESAMC", "Fadi", "Ceunsp"];
-
 // Vans FICTÍCIAS de demonstração: cobrem toda a região de Sorocaba e todas as faculdades,
 // para a busca nunca ficar vazia enquanto não há motoristas reais. São criadas sempre
 // (mesmo com SEED=false), mas sem senha: ninguém consegue entrar nessas contas.
-// Para removê-las, defina DEMO_VANS=false e publique de novo (ver PUBLICAR.md).
+// Para removê-las, defina DEMO_VANS=false e publique de novo (ver docs/PUBLICAR.md).
 export const DEMO_VAN_DOMAIN = "demo.rotau.invalid";
 
-type DemoVan = { key: string; name: string; vanModel: string; capacity: number; departureTime: string; rating: number; cities: string[] };
+type DemoVan = {
+  key: string;
+  name: string;
+  vanModel: string;
+  capacity: number;
+  departureTime: string;
+  rating: number;
+  cities: string[];
+};
 
 // Horário de volta das vans de demonstração (saída da faculdade, depois da última aula)
 const DEMO_RETURN_TIME = "22:40";
 
 const demoVans: DemoVan[] = [
-  { key: "centro", name: "Paulo Mendes", vanModel: "Renault Master", capacity: 15, departureTime: "17:40", rating: 4.8, cities: ["Sorocaba (Centro)", "Vila Hortência", "Jd. Faculdade"] },
-  { key: "norte", name: "Juliana Prado", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "17:20", rating: 4.9, cities: ["Sorocaba (Zona Norte)", "Éden", "Itavuvu"] },
-  { key: "sul", name: "Marcos Teixeira", vanModel: "Fiat Ducato", capacity: 14, departureTime: "17:45", rating: 4.7, cities: ["Sorocaba (Zona Sul)", "Campolim", "Jd. Europa"] },
-  { key: "leste", name: "Sandra Oliveira", vanModel: "Peugeot Boxer", capacity: 14, departureTime: "17:30", rating: 4.8, cities: ["Sorocaba (Zona Leste)", "Brigadeiro Tobias"] },
-  { key: "oeste", name: "Ricardo Nunes", vanModel: "Renault Master", capacity: 15, departureTime: "17:35", rating: 4.6, cities: ["Sorocaba (Zona Oeste)", "Wanel Ville"] },
-  { key: "votorantim", name: "Cláudia Ramos", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "17:00", rating: 4.9, cities: ["Votorantim", "Salto de Pirapora", "Piedade", "Pilar do Sul"] },
-  { key: "itu", name: "André Fonseca", vanModel: "Iveco Daily", capacity: 16, departureTime: "16:50", rating: 4.7, cities: ["Itu", "Salto"] },
-  { key: "portofeliz", name: "Beatriz Campos", vanModel: "Fiat Ducato", capacity: 14, departureTime: "16:40", rating: 4.8, cities: ["Porto Feliz", "Boituva", "Cerquilho", "Tietê"] },
-  { key: "tatui", name: "Rogério Lima", vanModel: "Renault Master", capacity: 15, departureTime: "16:45", rating: 4.7, cities: ["Tatuí", "Capela do Alto", "Iperó", "Araçoiaba da Serra"] },
-  { key: "itapetininga", name: "Helena Duarte", vanModel: "Mercedes Sprinter", capacity: 16, departureTime: "16:20", rating: 4.8, cities: ["Itapetininga", "Alambari", "Sarapuí"] },
-  { key: "saoroque", name: "Gustavo Pires", vanModel: "Peugeot Boxer", capacity: 14, departureTime: "16:50", rating: 4.6, cities: ["São Roque", "Mairinque", "Alumínio"] },
+  {
+    key: "centro",
+    name: "Paulo Mendes",
+    vanModel: "Renault Master",
+    capacity: 15,
+    departureTime: "17:40",
+    rating: 4.8,
+    cities: ["Sorocaba (Centro)", "Vila Hortência", "Jd. Faculdade"],
+  },
+  {
+    key: "norte",
+    name: "Juliana Prado",
+    vanModel: "Mercedes Sprinter",
+    capacity: 16,
+    departureTime: "17:20",
+    rating: 4.9,
+    cities: ["Sorocaba (Zona Norte)", "Éden", "Itavuvu"],
+  },
+  {
+    key: "sul",
+    name: "Marcos Teixeira",
+    vanModel: "Fiat Ducato",
+    capacity: 14,
+    departureTime: "17:45",
+    rating: 4.7,
+    cities: ["Sorocaba (Zona Sul)", "Campolim", "Jd. Europa"],
+  },
+  {
+    key: "leste",
+    name: "Sandra Oliveira",
+    vanModel: "Peugeot Boxer",
+    capacity: 14,
+    departureTime: "17:30",
+    rating: 4.8,
+    cities: ["Sorocaba (Zona Leste)", "Brigadeiro Tobias"],
+  },
+  {
+    key: "oeste",
+    name: "Ricardo Nunes",
+    vanModel: "Renault Master",
+    capacity: 15,
+    departureTime: "17:35",
+    rating: 4.6,
+    cities: ["Sorocaba (Zona Oeste)", "Wanel Ville"],
+  },
+  {
+    key: "votorantim",
+    name: "Cláudia Ramos",
+    vanModel: "Mercedes Sprinter",
+    capacity: 16,
+    departureTime: "17:00",
+    rating: 4.9,
+    cities: ["Votorantim", "Salto de Pirapora", "Piedade", "Pilar do Sul"],
+  },
+  {
+    key: "itu",
+    name: "André Fonseca",
+    vanModel: "Iveco Daily",
+    capacity: 16,
+    departureTime: "16:50",
+    rating: 4.7,
+    cities: ["Itu", "Salto"],
+  },
+  {
+    key: "portofeliz",
+    name: "Beatriz Campos",
+    vanModel: "Fiat Ducato",
+    capacity: 14,
+    departureTime: "16:40",
+    rating: 4.8,
+    cities: ["Porto Feliz", "Boituva", "Cerquilho", "Tietê"],
+  },
+  {
+    key: "tatui",
+    name: "Rogério Lima",
+    vanModel: "Renault Master",
+    capacity: 15,
+    departureTime: "16:45",
+    rating: 4.7,
+    cities: ["Tatuí", "Capela do Alto", "Iperó", "Araçoiaba da Serra"],
+  },
+  {
+    key: "itapetininga",
+    name: "Helena Duarte",
+    vanModel: "Mercedes Sprinter",
+    capacity: 16,
+    departureTime: "16:20",
+    rating: 4.8,
+    cities: ["Itapetininga", "Alambari", "Sarapuí"],
+  },
+  {
+    key: "saoroque",
+    name: "Gustavo Pires",
+    vanModel: "Peugeot Boxer",
+    capacity: 14,
+    departureTime: "16:50",
+    rating: 4.6,
+    cities: ["São Roque", "Mairinque", "Alumínio"],
+  },
 ];
 
 // Contas de demonstração (vans e alunos) usam este domínio
@@ -288,8 +402,16 @@ function isDemoEmail(email: string): boolean {
 // Motoristas reais que ganham alunos coringa: nomes ou e-mails separados por vírgula em CORINGA_DRIVERS
 // (padrão: o dono do projeto; "off" desliga)
 function isCoringaDriver({ name, email }: { name: string; email: string }): boolean {
-  const plain = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const wanted = plain(process.env.CORINGA_DRIVERS ?? "Mateus Coelho").split(",").map((item) => item.trim()).filter((item) => item && item !== "off");
+  const plain = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  const wanted = plain(process.env.CORINGA_DRIVERS ?? "Mateus Coelho")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item && item !== "off");
   return wanted.includes(plain(name)) || wanted.includes(plain(email));
 }
 
@@ -298,6 +420,8 @@ const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 // Conexão normal ou uma transação aberta: as duas executam SQL do mesmo jeito
 type Executor = Pick<Client, "execute">;
 
+// Repositório: todas as consultas ao banco ficam aqui. A API (api.ts) só chama estes métodos
+// e nunca escreve SQL. As funções internas abaixo são auxiliares; o objeto `repo` é a parte pública.
 function createRepository(db: Client) {
   // Converte as linhas do libSQL em objetos simples (sem as chaves numéricas)
   async function all<T>(sql: string, args: InValue[] = [], q: Executor = db): Promise<T[]> {
@@ -305,14 +429,17 @@ function createRepository(db: Client) {
     return rows.map((row) => Object.fromEntries(columns.map((column, index) => [column, row[index]])) as T);
   }
 
+  // Primeira linha do resultado (ou undefined)
   async function get<T>(sql: string, args: InValue[] = [], q: Executor = db): Promise<T | undefined> {
     return (await all<T>(sql, args, q))[0];
   }
 
+  // Executa um comando e devolve o id da linha inserida (quando houver)
   async function run(sql: string, args: InValue[] = [], q: Executor = db): Promise<number> {
     return Number((await q.execute({ sql, args })).lastInsertRowid ?? 0);
   }
 
+  // Executa várias operações como uma só: se qualquer uma falhar, nada é gravado (rollback)
   async function transaction<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
     const tx = await db.transaction("write");
     try {
@@ -328,9 +455,10 @@ function createRepository(db: Client) {
   }
 
   async function findCollege(nameOrId: string | number, q: Executor = db): Promise<College> {
-    const college = typeof nameOrId === "number"
-      ? await get<College>("SELECT id, name FROM colleges WHERE id = ?", [nameOrId], q)
-      : await get<College>("SELECT id, name FROM colleges WHERE name = ?", [nameOrId.trim()], q);
+    const college =
+      typeof nameOrId === "number"
+        ? await get<College>("SELECT id, name FROM colleges WHERE id = ?", [nameOrId], q)
+        : await get<College>("SELECT id, name FROM colleges WHERE name = ?", [nameOrId.trim()], q);
     if (!college) throw new ApiError(400, `Faculdade "${nameOrId}" não encontrada.`);
     return college;
   }
@@ -341,7 +469,13 @@ function createRepository(db: Client) {
     return { id: await run("INSERT INTO colleges (name) VALUES (?)", [name], q), name };
   }
 
-  async function insertOrConflict(sql: string, args: InValue[], conflictMessage: string, q: Executor = db): Promise<number> {
+  // INSERT que transforma a violação de UNIQUE (e-mail ou placa repetidos) em erro 409 com mensagem amigável
+  async function insertOrConflict(
+    sql: string,
+    args: InValue[],
+    conflictMessage: string,
+    q: Executor = db,
+  ): Promise<number> {
     try {
       return await run(sql, args, q);
     } catch (error) {
@@ -350,6 +484,8 @@ function createRepository(db: Client) {
     }
   }
 
+  // Consulta base do motorista/van: dados do cadastro mais contagens calculadas na hora
+  // (vagas ocupadas, documentos enviados) e as listas de cidades e faculdades em texto.
   const driverSummarySql = `
     SELECT d.id, d.name, d.phone, d.email, d.van_model AS vanModel, d.plate, d.capacity,
            d.departure_time AS departureTime, d.return_time AS returnTime, d.rating, d.subscription_until AS subscriptionUntil,
@@ -359,6 +495,7 @@ function createRepository(db: Client) {
            (SELECT group_concat(c.name, ',') FROM driver_colleges dc JOIN colleges c ON c.id = dc.college_id WHERE dc.driver_id = d.id) AS colleges
     FROM drivers d`;
 
+  // Linha do banco -> objeto Driver: separa as listas, calcula vagas livres e se a assinatura está em dia
   function toDriver({ documentCount, ...row }: DriverRow): Driver {
     return {
       ...row,
@@ -377,43 +514,64 @@ function createRepository(db: Client) {
   }
 
   async function getStudent(id: number, q: Executor = db): Promise<Student> {
-    const student = await get<Student>(`
+    const student = await get<Student>(
+      `
       SELECT s.id, s.name, s.phone, s.email, s.address, c.id AS collegeId, c.name AS college
-      FROM students s JOIN colleges c ON c.id = s.college_id WHERE s.id = ?`, [id], q);
+      FROM students s JOIN colleges c ON c.id = s.college_id WHERE s.id = ?`,
+      [id],
+      q,
+    );
     if (!student) throw new ApiError(404, "Estudante não encontrado.");
     return student;
   }
 
+  // Vans visíveis para uma faculdade: só as com assinatura em dia, melhor nota primeiro
   async function driversForCollege(collegeId: number): Promise<Driver[]> {
-    const rows = await all<DriverRow>(`${driverSummarySql}
+    const rows = await all<DriverRow>(
+      `${driverSummarySql}
       WHERE d.id IN (SELECT driver_id FROM driver_colleges WHERE college_id = ?)
-      ORDER BY d.rating DESC, d.departure_time`, [collegeId]);
+      ORDER BY d.rating DESC, d.departure_time`,
+      [collegeId],
+    );
     return rows.map(toDriver).filter((driver) => driver.subscriptionActive);
   }
 
   async function getBooking(id: number): Promise<Booking> {
-    const booking = await get<Booking>("SELECT id, status, pickup, pickup_time AS pickupTime FROM bookings WHERE id = ?", [id]);
+    const booking = await get<Booking>(
+      "SELECT id, status, pickup, pickup_time AS pickupTime FROM bookings WHERE id = ?",
+      [id],
+    );
     if (!booking) throw new ApiError(404, "Reserva não encontrada.");
     return booking;
   }
 
   // Cria um aviso para o sino do painel
   async function notify(user: SessionUser, title: string, body: string, q: Executor = db): Promise<void> {
-    await run("INSERT INTO notifications (profile, user_id, title, body) VALUES (?, ?, ?, ?)", [user.profile, user.id, title, body], q);
+    await run(
+      "INSERT INTO notifications (profile, user_id, title, body) VALUES (?, ?, ?, ?)",
+      [user.profile, user.id, title, body],
+      q,
+    );
   }
 
   // Reserva que vale para o estudante: a confirmada, ou a mais recente aguardando
   function activeBooking(studentId: number) {
-    return get<{ id: number; driverId: number; pickup: string; pickupTime: string | null; status: BookingStatus }>(`
+    return get<{ id: number; driverId: number; pickup: string; pickupTime: string | null; status: BookingStatus }>(
+      `
       SELECT id, driver_id AS driverId, pickup, pickup_time AS pickupTime, status FROM bookings
       WHERE student_id = ? AND status <> 'Cancelado'
-      ORDER BY status = 'Confirmado' DESC, created_at DESC, id DESC LIMIT 1`, [studentId]);
+      ORDER BY status = 'Confirmado' DESC, created_at DESC, id DESC LIMIT 1`,
+      [studentId],
+    );
   }
 
   // Passageiros da van com a presença do dia (null = ainda não respondeu). Os alunos de demonstração
   // vão todo dia, a menos que a presença deles seja registrada. `point` = posição do endereço, se conhecida.
   async function passengersOf(driverId: number, day: string): Promise<Rider[]> {
-    const rows = await all<Omit<Passenger, "going"> & { going: number | null; lat: number | null; lng: number | null; home: string }>(`
+    const rows = await all<
+      Omit<Passenger, "going"> & { going: number | null; lat: number | null; lng: number | null; home: string }
+    >(
+      `
       SELECT b.id AS bookingId, s.id AS studentId, s.name, b.pickup, b.pickup_time AS pickupTime, c.name AS college, b.status,
              s.lat, s.lng, s.address AS home,
              coalesce((SELECT a.going FROM attendance a WHERE a.student_id = s.id AND a.driver_id = b.driver_id AND a.day = ?),
@@ -422,17 +580,22 @@ function createRepository(db: Client) {
       JOIN students s ON s.id = b.student_id
       JOIN colleges c ON c.id = s.college_id
       WHERE b.driver_id = ? AND b.status <> 'Cancelado'
-      ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at, b.id`, [day, `%@${DEMO_VAN_DOMAIN}`, driverId]);
+      ORDER BY coalesce(b.pickup_time, '99:99'), b.created_at, b.id`,
+      [day, `%@${DEMO_VAN_DOMAIN}`, driverId],
+    );
     return rows.map(({ lat, lng, home, going, ...row }) => ({
       ...row,
       going: going === null ? null : Boolean(going),
-      point: lat !== null && lng !== null ? { lat, lng } : approximatePoint(row.pickup) ?? approximatePoint(home),
+      point: lat !== null && lng !== null ? { lat, lng } : (approximatePoint(row.pickup) ?? approximatePoint(home)),
     }));
   }
 
+  // Horário em que o motorista iniciou a ida e/ou a volta no dia
   async function routeRuns(driverId: number, day: string): Promise<Partial<Record<Leg, Date>>> {
     const rows = await all<{ leg: Leg; startedAt: string }>(
-      "SELECT leg, started_at AS startedAt FROM route_runs WHERE driver_id = ? AND day = ?", [driverId, day]);
+      "SELECT leg, started_at AS startedAt FROM route_runs WHERE driver_id = ? AND day = ?",
+      [driverId, day],
+    );
     return Object.fromEntries(rows.map((row) => [row.leg, fromSqlTime(row.startedAt)]));
   }
 
@@ -452,8 +615,13 @@ function createRepository(db: Client) {
     const cityPoints = driver.cities.map((city) => placePoint(city)).filter((point): point is Point => point !== null);
     const start: Point | null = cityPoints[0] ?? null;
     // endereço que não conseguimos localizar: assume um ponto no meio da área que a van atende
-    const area: Point | null = cityPoints.length === 0 ? null
-      : { lat: cityPoints.reduce((t, p) => t + p.lat, 0) / cityPoints.length, lng: cityPoints.reduce((t, p) => t + p.lng, 0) / cityPoints.length };
+    const area: Point | null =
+      cityPoints.length === 0
+        ? null
+        : {
+            lat: cityPoints.reduce((t, p) => t + p.lat, 0) / cityPoints.length,
+            lng: cityPoints.reduce((t, p) => t + p.lng, 0) / cityPoints.length,
+          };
     const stops = riders.map((rider) => ({ id: rider.studentId, point: rider.point ?? area }));
     const plan = leg === "ida" ? planRoute(start, stops, college) : planRoute(college, stops);
     return { plan, destination };
@@ -461,11 +629,17 @@ function createRepository(db: Client) {
 
   // Horário (HH:MM) em que a van chega a um ponto da rota: conta a partir da saída real
   // ou, se ainda não saiu, do horário programado (previsão).
-  function clockAt(started: Date | undefined, scheduled: string | null, minutes: number): { time: string; predicted: boolean } | null {
+  function clockAt(
+    started: Date | undefined,
+    scheduled: string | null,
+    minutes: number,
+  ): { time: string; predicted: boolean } | null {
     if (started) return { time: localTime(addMinutes(started, minutes)), predicted: false };
     return scheduled ? { time: clockPlus(scheduled, minutes), predicted: true } : null;
   }
 
+  // Estudantes cujo endereço já tentamos localizar nesta execução do servidor
+  // (evita consultar o serviço de mapas toda vez que o painel abre)
   const triedLocating = new Set<number>();
 
   const repo = {
@@ -478,7 +652,14 @@ function createRepository(db: Client) {
       const college = await findCollege(typeof data.college === "number" ? data.college : text(input, "college"));
       const id = await insertOrConflict(
         "INSERT INTO students (name, phone, email, address, college_id, password_hash) VALUES (?, ?, ?, ?, ?, ?)",
-        [text(input, "name"), text(input, "phone"), text(input, "email"), text(input, "address"), college.id, data.passwordHash ?? null],
+        [
+          text(input, "name"),
+          text(input, "phone"),
+          text(input, "email"),
+          text(input, "address"),
+          college.id,
+          data.passwordHash ?? null,
+        ],
         "Já existe um estudante com este e-mail.",
       );
       return getStudent(id);
@@ -504,7 +685,8 @@ function createRepository(db: Client) {
       const departureTime = String(data.departureTime ?? "17:30");
       if (!timePattern.test(departureTime)) throw new ApiError(400, "Horário de saída inválido (use HH:MM).");
       const returnTime = data.returnTime ? String(data.returnTime) : null;
-      if (returnTime && !timePattern.test(returnTime)) throw new ApiError(400, "Horário de volta inválido (use HH:MM).");
+      if (returnTime && !timePattern.test(returnTime))
+        throw new ApiError(400, "Horário de volta inválido (use HH:MM).");
       const rating = data.rating === undefined ? 5 : Number(data.rating);
       if (!(rating >= 0 && rating <= 5)) throw new ApiError(400, "Nota inválida (use de 0 a 5).");
 
@@ -512,16 +694,35 @@ function createRepository(db: Client) {
         const driverId = await insertOrConflict(
           `INSERT INTO drivers (name, phone, email, van_model, plate, capacity, departure_time, return_time, rating, password_hash)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [fields.name, fields.phone, fields.email, fields.vanModel, fields.plate, capacity, departureTime, returnTime, rating, data.passwordHash ?? null],
+          [
+            fields.name,
+            fields.phone,
+            fields.email,
+            fields.vanModel,
+            fields.plate,
+            capacity,
+            departureTime,
+            returnTime,
+            rating,
+            data.passwordHash ?? null,
+          ],
           "Já existe um motorista com este e-mail ou placa.",
           tx,
         );
         for (const [index, city] of cities.entries()) {
-          await run("INSERT INTO driver_cities (driver_id, position, city) VALUES (?, ?, ?)", [driverId, index, city], tx);
+          await run(
+            "INSERT INTO driver_cities (driver_id, position, city) VALUES (?, ?, ?)",
+            [driverId, index, city],
+            tx,
+          );
         }
         for (const name of colleges) {
           const college = await findOrCreateCollege(name, tx);
-          await run("INSERT OR IGNORE INTO driver_colleges (driver_id, college_id) VALUES (?, ?)", [driverId, college.id], tx);
+          await run(
+            "INSERT OR IGNORE INTO driver_colleges (driver_id, college_id) VALUES (?, ?)",
+            [driverId, college.id],
+            tx,
+          );
         }
         return driverId;
       });
@@ -536,7 +737,11 @@ function createRepository(db: Client) {
       const address = text(input, "address");
       const found = await findCollege(text(input, "college"));
       const drivers = await driversForCollege(found.id);
-      await run("INSERT INTO searches (address, college_id, results) VALUES (?, ?, ?)", [address, found.id, drivers.length]);
+      await run("INSERT INTO searches (address, college_id, results) VALUES (?, ?, ?)", [
+        address,
+        found.id,
+        drivers.length,
+      ]);
       return { college: found.name, count: drivers.length };
     },
 
@@ -548,14 +753,18 @@ function createRepository(db: Client) {
         const student = await getStudent(studentId);
         target = { id: student.collegeId, name: student.college };
         const booked = await all<{ driver_id: number }>(
-          "SELECT driver_id FROM bookings WHERE student_id = ? AND status <> 'Cancelado'", [studentId]);
+          "SELECT driver_id FROM bookings WHERE student_id = ? AND status <> 'Cancelado'",
+          [studentId],
+        );
         bookedDriverIds = new Set(booked.map((row) => row.driver_id));
       } else if (college) {
         target = await findCollege(college);
       }
       const drivers = target
         ? await driversForCollege(target.id)
-        : (await all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`)).map(toDriver).filter((driver) => driver.subscriptionActive);
+        : (await all<DriverRow>(`${driverSummarySql} ORDER BY d.rating DESC`))
+            .map(toDriver)
+            .filter((driver) => driver.subscriptionActive);
       return drivers.map((driver) => ({
         id: driver.id,
         driver: driver.name,
@@ -578,9 +787,12 @@ function createRepository(db: Client) {
       if (!driver.colleges.some((name) => name.toLowerCase() === student.college.toLowerCase())) {
         throw new ApiError(404, "Esta van não atende a sua faculdade.");
       }
-      const active = await all<{ id: number; driverId: number; status: BookingStatus; driver: string }>(`
+      const active = await all<{ id: number; driverId: number; status: BookingStatus; driver: string }>(
+        `
         SELECT b.id, b.driver_id AS driverId, b.status, d.name AS driver FROM bookings b JOIN drivers d ON d.id = b.driver_id
-        WHERE b.student_id = ? AND b.status <> 'Cancelado' ORDER BY b.id DESC`, [studentId]);
+        WHERE b.student_id = ? AND b.status <> 'Cancelado' ORDER BY b.id DESC`,
+        [studentId],
+      );
       const mine = active.find((booking) => booking.driverId === driverId);
       // van com a assinatura vencida some para quem ainda não reservou
       if (!driver.subscriptionActive && !mine) throw new ApiError(404, "Esta van não está disponível no momento.");
@@ -611,13 +823,22 @@ function createRepository(db: Client) {
     async cancelBooking(studentId: number, bookingId: number): Promise<{ id: number; status: BookingStatus }> {
       return transaction(async (tx) => {
         const booking = await get<{ studentId: number; driverId: number; status: BookingStatus }>(
-          "SELECT student_id AS studentId, driver_id AS driverId, status FROM bookings WHERE id = ?", [bookingId], tx);
+          "SELECT student_id AS studentId, driver_id AS driverId, status FROM bookings WHERE id = ?",
+          [bookingId],
+          tx,
+        );
         if (!booking) throw new ApiError(404, "Reserva não encontrada.");
-        if (booking.studentId !== studentId) throw new ApiError(403, "Você não tem permissão para acessar estes dados.");
+        if (booking.studentId !== studentId)
+          throw new ApiError(403, "Você não tem permissão para acessar estes dados.");
         if (booking.status === "Cancelado") throw new ApiError(409, "Esta reserva já foi cancelada.");
         await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [bookingId], tx);
         const student = await getStudent(studentId, tx);
-        await notify({ profile: "driver", id: booking.driverId }, "Vaga liberada", `${student.name} cancelou a reserva e saiu da sua van.`, tx);
+        await notify(
+          { profile: "driver", id: booking.driverId },
+          "Vaga liberada",
+          `${student.name} cancelou a reserva e saiu da sua van.`,
+          tx,
+        );
         return { id: bookingId, status: "Cancelado" as const };
       });
     },
@@ -637,9 +858,15 @@ function createRepository(db: Client) {
       const driver = await getDriver(driverId);
       if (isDemoEmail(driver.email)) throw new ApiError(409, "Contas de demonstração não precisam de assinatura.");
       const until = renewedUntil(driver.subscriptionUntil, localDay(now), config.days);
-      await run("UPDATE drivers SET subscription_until = ?, subscription_notice = NULL WHERE id = ?", [until, driverId]);
-      await notify({ profile: "driver", id: driverId }, "Assinatura ativa",
-        `Pagamento simulado confirmado. Sua van está liberada para os alunos até ${until.split("-").reverse().join("/")}.`);
+      await run("UPDATE drivers SET subscription_until = ?, subscription_notice = NULL WHERE id = ?", [
+        until,
+        driverId,
+      ]);
+      await notify(
+        { profile: "driver", id: driverId },
+        "Assinatura ativa",
+        `Pagamento simulado confirmado. Sua van está liberada para os alunos até ${until.split("-").reverse().join("/")}.`,
+      );
       return repo.subscription(driverId, now);
     },
 
@@ -647,7 +874,9 @@ function createRepository(db: Client) {
     async checkSubscriptionNotices(driverId: number, now = new Date()): Promise<void> {
       const config = subscriptionConfig();
       const row = await get<{ email: string; until: string | null; notice: string | null }>(
-        "SELECT email, subscription_until AS until, subscription_notice AS notice FROM drivers WHERE id = ?", [driverId]);
+        "SELECT email, subscription_until AS until, subscription_notice AS notice FROM drivers WHERE id = ?",
+        [driverId],
+      );
       if (!config.enabled || !row || isDemoEmail(row.email)) return;
       const info = subscriptionInfo(row.until, localDay(now), false, config);
       const price = `R$ ${config.price.toFixed(2).replace(".", ",")}`;
@@ -655,45 +884,69 @@ function createRepository(db: Client) {
       if (row.until === null) {
         notice = "none";
         if (row.notice !== notice) {
-          await notify({ profile: "driver", id: driverId }, "Assine para liberar sua van",
-            `Sua conta está criada, mas sua van só aparece para os alunos com a assinatura em dia (${price} por mês). Assine no painel.`);
+          await notify(
+            { profile: "driver", id: driverId },
+            "Assine para liberar sua van",
+            `Sua conta está criada, mas sua van só aparece para os alunos com a assinatura em dia (${price} por mês). Assine no painel.`,
+          );
         }
       } else if (!info.active) {
         notice = `${row.until}:expired`;
         if (row.notice !== notice) {
-          await notify({ profile: "driver", id: driverId }, "Assinatura vencida",
-            `Sua assinatura venceu em ${row.until.split("-").reverse().join("/")} e sua van ficou oculta para novos alunos. Renove no painel.`);
+          await notify(
+            { profile: "driver", id: driverId },
+            "Assinatura vencida",
+            `Sua assinatura venceu em ${row.until.split("-").reverse().join("/")} e sua van ficou oculta para novos alunos. Renove no painel.`,
+          );
         }
       } else if (info.daysLeft !== null && info.daysLeft <= config.warnDays) {
         notice = `${row.until}:soon`;
         if (row.notice !== notice) {
-          await notify({ profile: "driver", id: driverId }, "Assinatura perto de vencer",
-            info.daysLeft === 0 ? "Sua assinatura vence hoje. Renove no painel para não perder novos alunos."
-              : `Sua assinatura vence em ${info.daysLeft} ${info.daysLeft === 1 ? "dia" : "dias"}. Renove no painel para não perder novos alunos.`);
+          await notify(
+            { profile: "driver", id: driverId },
+            "Assinatura perto de vencer",
+            info.daysLeft === 0
+              ? "Sua assinatura vence hoje. Renove no painel para não perder novos alunos."
+              : `Sua assinatura vence em ${info.daysLeft} ${info.daysLeft === 1 ? "dia" : "dias"}. Renove no painel para não perder novos alunos.`,
+          );
         }
       }
-      if (notice !== null && notice !== row.notice) await run("UPDATE drivers SET subscription_notice = ? WHERE id = ?", [notice, driverId]);
+      if (notice !== null && notice !== row.notice)
+        await run("UPDATE drivers SET subscription_notice = ? WHERE id = ?", [notice, driverId]);
     },
 
     // Documentos do motorista (RF011): a lista traz só nome, tipo e tamanho; o conteúdo sai apenas em getDocument
     async listDocuments(driverId: number): Promise<DriverDocument[]> {
       return all<DriverDocument>(
-        "SELECT kind, filename, mime, size, uploaded_at AS uploadedAt FROM driver_documents WHERE driver_id = ? ORDER BY kind", [driverId]);
+        "SELECT kind, filename, mime, size, uploaded_at AS uploadedAt FROM driver_documents WHERE driver_id = ? ORDER BY kind",
+        [driverId],
+      );
     },
 
-    async saveDocument(driverId: number, kind: DocumentKind, file: { filename: string; mime: DocumentMime; bytes: Buffer }): Promise<DriverDocument[]> {
+    async saveDocument(
+      driverId: number,
+      kind: DocumentKind,
+      file: { filename: string; mime: DocumentMime; bytes: Buffer },
+    ): Promise<DriverDocument[]> {
       await getDriver(driverId);
-      await run(`
+      await run(
+        `
         INSERT INTO driver_documents (driver_id, kind, filename, mime, size, content) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (driver_id, kind) DO UPDATE SET filename = excluded.filename, mime = excluded.mime, size = excluded.size,
           content = excluded.content, uploaded_at = datetime('now')`,
-        [driverId, kind, file.filename, file.mime, file.bytes.length, new Uint8Array(file.bytes)]);
+        [driverId, kind, file.filename, file.mime, file.bytes.length, new Uint8Array(file.bytes)],
+      );
       return repo.listDocuments(driverId);
     },
 
-    async getDocument(driverId: number, kind: DocumentKind): Promise<{ filename: string; mime: DocumentMime; bytes: Buffer }> {
+    async getDocument(
+      driverId: number,
+      kind: DocumentKind,
+    ): Promise<{ filename: string; mime: DocumentMime; bytes: Buffer }> {
       const row = await get<{ filename: string; mime: DocumentMime; content: ArrayBuffer }>(
-        "SELECT filename, mime, content FROM driver_documents WHERE driver_id = ? AND kind = ?", [driverId, documentKind(kind)]);
+        "SELECT filename, mime, content FROM driver_documents WHERE driver_id = ? AND kind = ?",
+        [driverId, documentKind(kind)],
+      );
       if (!row) throw new ApiError(404, "Documento não enviado.");
       return { filename: row.filename, mime: row.mime, bytes: Buffer.from(row.content) };
     },
@@ -705,15 +958,26 @@ function createRepository(db: Client) {
 
     // Aceite dos termos de segurança e conduta (RF010)
     async termsAcceptance(driverId: number): Promise<DriverAcceptance> {
-      const row = await get<{ id: number; name: string; email: string; version: string | null; acceptedAt: string | null }>(
-        "SELECT id, name, email, terms_version AS version, terms_accepted_at AS acceptedAt FROM drivers WHERE id = ?", [driverId]);
+      const row = await get<{
+        id: number;
+        name: string;
+        email: string;
+        version: string | null;
+        acceptedAt: string | null;
+      }>(
+        "SELECT id, name, email, terms_version AS version, terms_accepted_at AS acceptedAt FROM drivers WHERE id = ?",
+        [driverId],
+      );
       if (!row) throw new ApiError(404, "Motorista não encontrado.");
       return row;
     },
 
     async acceptTerms(driverId: number): Promise<DriverAcceptance> {
       await repo.termsAcceptance(driverId);
-      await run("UPDATE drivers SET terms_version = ?, terms_accepted_at = datetime('now') WHERE id = ?", [TERMS_VERSION, driverId]);
+      await run("UPDATE drivers SET terms_version = ?, terms_accepted_at = datetime('now') WHERE id = ?", [
+        TERMS_VERSION,
+        driverId,
+      ]);
       return repo.termsAcceptance(driverId);
     },
 
@@ -723,7 +987,18 @@ function createRepository(db: Client) {
     },
 
     // Painel do motorista: dados da rota, lista de embarque e quem vai hoje
-    async driverDashboard(driverId: number, now = new Date()): Promise<{ driver: Driver; passengers: Passenger[]; mainDestination: string; today: DriverToday; subscription: SubscriptionInfo; documents: DriverDocument[]; terms: { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean } }> {
+    async driverDashboard(
+      driverId: number,
+      now = new Date(),
+    ): Promise<{
+      driver: Driver;
+      passengers: Passenger[];
+      mainDestination: string;
+      today: DriverToday;
+      subscription: SubscriptionInfo;
+      documents: DriverDocument[];
+      terms: { version: string; acceptedVersion: string | null; acceptedAt: string | null; accepted: boolean };
+    }> {
       await repo.checkSubscriptionNotices(driverId, now);
       await repo.ensureCoringas(driverId); // motorista criado depois da última partida do servidor também ganha os coringas
       const driver = await getDriver(driverId);
@@ -743,7 +1018,11 @@ function createRepository(db: Client) {
         legs: legs.map((leg) => {
           const started = runs[leg];
           const scheduled = scheduledTime(driver, leg);
-          const planned = planLeg(driver, leg, riders.filter((r) => r.going === true));
+          const planned = planLeg(
+            driver,
+            leg,
+            riders.filter((r) => r.going === true),
+          );
           let route: LegRoute | null = null;
           let predicted = false;
           if (planned) {
@@ -752,23 +1031,54 @@ function createRepository(db: Client) {
               const rider = names.get(stop.id)!;
               const at = clockAt(started, scheduled, stop.minutes);
               predicted = at?.predicted ?? false;
-              return { studentId: rider.studentId, name: rider.name, pickup: rider.pickup, order: stop.order, eta: at?.time ?? null };
+              return {
+                studentId: rider.studentId,
+                name: rider.name,
+                pickup: rider.pickup,
+                order: stop.order,
+                eta: at?.time ?? null,
+              };
             });
             const end = clockAt(started, scheduled, planned.plan.totalMinutes);
-            route = { destination: planned.destination, totalMinutes: planned.plan.totalMinutes, distanceKm: planned.plan.distanceKm, arrival: end?.time ?? null, stops };
+            route = {
+              destination: planned.destination,
+              totalMinutes: planned.plan.totalMinutes,
+              distanceKm: planned.plan.distanceKm,
+              arrival: end?.time ?? null,
+              stops,
+            };
           }
           return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: null, predicted, route };
         }),
       };
       const acceptance = await repo.termsAcceptance(driverId);
-      const terms = { version: TERMS_VERSION, acceptedVersion: acceptance.version, acceptedAt: acceptance.acceptedAt, accepted: acceptance.version === TERMS_VERSION };
-      return { driver, passengers, mainDestination, today, subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)), documents: await repo.listDocuments(driverId), terms };
+      const terms = {
+        version: TERMS_VERSION,
+        acceptedVersion: acceptance.version,
+        acceptedAt: acceptance.acceptedAt,
+        accepted: acceptance.version === TERMS_VERSION,
+      };
+      return {
+        driver,
+        passengers,
+        mainDestination,
+        today,
+        subscription: subscriptionInfo(driver.subscriptionUntil, day, isDemoEmail(driver.email)),
+        documents: await repo.listDocuments(driverId),
+        terms,
+      };
     },
 
     // Descobre a posição do endereço do estudante (uma tentativa por execução do servidor; falhou, usa a aproximação)
-    async locateStudent(studentId: number, locate: (address: string) => Promise<Point | null> = geocode): Promise<void> {
+    async locateStudent(
+      studentId: number,
+      locate: (address: string) => Promise<Point | null> = geocode,
+    ): Promise<void> {
       if (triedLocating.has(studentId)) return;
-      const row = await get<{ lat: number | null; email: string; address: string }>("SELECT lat, email, address FROM students WHERE id = ?", [studentId]);
+      const row = await get<{ lat: number | null; email: string; address: string }>(
+        "SELECT lat, email, address FROM students WHERE id = ?",
+        [studentId],
+      );
       if (!row || row.lat !== null || row.email.toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`)) return;
       triedLocating.add(studentId);
       const point = await locate(row.address);
@@ -781,7 +1091,12 @@ function createRepository(db: Client) {
       const base = { day, weekday: weekdayOf(day) };
       const booking = await activeBooking(studentId);
       if (!booking) {
-        return { ...base, going: null, van: null, legs: legs.map((leg) => ({ leg, scheduled: null, startedAt: null, eta: null, predicted: false })) };
+        return {
+          ...base,
+          going: null,
+          van: null,
+          legs: legs.map((leg) => ({ leg, scheduled: null, startedAt: null, eta: null, predicted: false })),
+        };
       }
       const driver = await getDriver(booking.driverId);
       const passengers = await passengersOf(driver.id, day);
@@ -808,7 +1123,14 @@ function createRepository(db: Client) {
           const minutes = planned?.plan.stops.find((stop) => stop.id === studentId)?.minutes;
           const at = minutes === undefined ? null : clockAt(started, scheduled, minutes);
           const ride = minutes === undefined ? null : leg === "ida" ? planned!.plan.totalMinutes - minutes : minutes;
-          return { leg, scheduled, startedAt: started ? localTime(started) : null, eta: at?.time ?? null, predicted: at?.predicted ?? false, rideMinutes: ride };
+          return {
+            leg,
+            scheduled,
+            startedAt: started ? localTime(started) : null,
+            eta: at?.time ?? null,
+            predicted: at?.predicted ?? false,
+            rideMinutes: ride,
+          };
         }),
       };
     },
@@ -819,19 +1141,30 @@ function createRepository(db: Client) {
       const booking = await activeBooking(studentId);
       if (!booking) throw new ApiError(409, "Reserve uma vaga numa van para confirmar presença.");
       const day = localDay(now);
-      const previous = await get<{ going: number }>("SELECT going FROM attendance WHERE student_id = ? AND day = ?", [studentId, day]);
-      await run(`INSERT INTO attendance (student_id, driver_id, day, going) VALUES (?, ?, ?, ?)
+      const previous = await get<{ going: number }>("SELECT going FROM attendance WHERE student_id = ? AND day = ?", [
+        studentId,
+        day,
+      ]);
+      await run(
+        `INSERT INTO attendance (student_id, driver_id, day, going) VALUES (?, ?, ?, ?)
                  ON CONFLICT (student_id, day) DO UPDATE SET driver_id = excluded.driver_id, going = excluded.going, updated_at = datetime('now')`,
-        [studentId, booking.driverId, day, going ? 1 : 0]);
+        [studentId, booking.driverId, day, going ? 1 : 0],
+      );
       if (!previous || Boolean(previous.going) !== going) {
         const student = await getStudent(studentId);
         const firstName = student.name.split(" ")[0];
-        await notify({ profile: "student", id: studentId },
+        await notify(
+          { profile: "student", id: studentId },
           going ? "Presença confirmada" : "Ausência registrada",
-          going ? "Presença confirmada: você vai hoje. O motorista já sabe." : "Você avisou que não vai hoje. O motorista não vai passar no seu ponto.");
-        await notify({ profile: "driver", id: booking.driverId },
+          going
+            ? "Presença confirmada: você vai hoje. O motorista já sabe."
+            : "Você avisou que não vai hoje. O motorista não vai passar no seu ponto.",
+        );
+        await notify(
+          { profile: "driver", id: booking.driverId },
           going ? `${firstName} vai hoje` : `${firstName} não vai hoje`,
-          `${student.name} ${going ? "confirmou presença" : "avisou que não vai"} hoje (${weekdayOf(day).toLowerCase()}). Embarque: ${booking.pickup}.`);
+          `${student.name} ${going ? "confirmou presença" : "avisou que não vai"} hoje (${weekdayOf(day).toLowerCase()}). Embarque: ${booking.pickup}.`,
+        );
       }
       return repo.studentToday(studentId, now);
     },
@@ -841,18 +1174,23 @@ function createRepository(db: Client) {
       if (leg !== "ida" && leg !== "volta") throw new ApiError(400, "Escolha a viagem: ida ou volta.");
       const day = localDay(now);
       const startedAt = now.toISOString().slice(0, 19).replace("T", " ");
-      await insertOrConflict("INSERT INTO route_runs (driver_id, day, leg, started_at) VALUES (?, ?, ?, ?)",
-        [driverId, day, leg, startedAt], leg === "ida" ? "Você já iniciou a ida de hoje." : "Você já iniciou a volta de hoje.");
+      await insertOrConflict(
+        "INSERT INTO route_runs (driver_id, day, leg, started_at) VALUES (?, ?, ?, ?)",
+        [driverId, day, leg, startedAt],
+        leg === "ida" ? "Você já iniciou a ida de hoje." : "Você já iniciou a volta de hoje.",
+      );
       const riders = (await passengersOf(driverId, day)).filter((p) => p.going === true);
       const planned = planLeg(await getDriver(driverId), leg, riders);
       for (const rider of riders) {
         const minutes = planned!.plan.stops.find((stop) => stop.id === rider.studentId)!.minutes;
         const eta = localTime(addMinutes(now, minutes));
-        await notify({ profile: "student", id: rider.studentId },
+        await notify(
+          { profile: "student", id: rider.studentId },
           leg === "ida" ? "A van saiu para te buscar" : "A van saiu da faculdade",
           leg === "ida"
             ? `O motorista iniciou a rota às ${localTime(now)}. Previsão no seu ponto (${rider.pickup}): ${eta}.`
-            : `O motorista iniciou a volta às ${localTime(now)}. Previsão de chegada em casa: ${eta}.`);
+            : `O motorista iniciou a volta às ${localTime(now)}. Previsão de chegada em casa: ${eta}.`,
+        );
       }
       return (await repo.driverDashboard(driverId, now)).today;
     },
@@ -860,24 +1198,45 @@ function createRepository(db: Client) {
     // Últimos avisos do usuário logado
     async notifications(user: SessionUser): Promise<{ unread: number; items: Notification[] }> {
       if (user.profile === "driver") await repo.checkSubscriptionNotices(user.id);
-      const rows = await all<{ id: number; title: string; body: string; createdAt: string; readAt: string | null }>(`
+      const rows = await all<{ id: number; title: string; body: string; createdAt: string; readAt: string | null }>(
+        `
         SELECT id, title, body, created_at AS createdAt, read_at AS readAt FROM notifications
-        WHERE profile = ? AND user_id = ? ORDER BY id DESC LIMIT 30`, [user.profile, user.id]);
+        WHERE profile = ? AND user_id = ? ORDER BY id DESC LIMIT 30`,
+        [user.profile, user.id],
+      );
       const { unread } = (await get<{ unread: number }>(
-        "SELECT COUNT(*) AS unread FROM notifications WHERE profile = ? AND user_id = ? AND read_at IS NULL", [user.profile, user.id]))!;
+        "SELECT COUNT(*) AS unread FROM notifications WHERE profile = ? AND user_id = ? AND read_at IS NULL",
+        [user.profile, user.id],
+      ))!;
       return {
         unread,
-        items: rows.map((row) => ({ id: row.id, title: row.title, body: row.body, createdAt: fromSqlTime(row.createdAt).toISOString(), read: row.readAt !== null })),
+        items: rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          body: row.body,
+          createdAt: fromSqlTime(row.createdAt).toISOString(),
+          read: row.readAt !== null,
+        })),
       };
     },
 
     async markNotificationsRead(user: SessionUser): Promise<{ ok: true }> {
-      await run("UPDATE notifications SET read_at = datetime('now') WHERE profile = ? AND user_id = ? AND read_at IS NULL", [user.profile, user.id]);
+      await run(
+        "UPDATE notifications SET read_at = datetime('now') WHERE profile = ? AND user_id = ? AND read_at IS NULL",
+        [user.profile, user.id],
+      );
       return { ok: true };
     },
 
     // Cada estudante fica em uma van só: com `replace`, a reserva atual é cancelada e a nova entra no lugar
-    createBooking(data: { studentId?: number | string; driverId?: number | string; replace?: unknown }): Promise<{ id: number; status: BookingStatus }> {
+    // Reserva de vaga. Regras: uma van ativa por estudante (trocar exige `replace: true`, que cancela a
+    // anterior), a van precisa ter assinatura em dia e vaga livre. Tudo numa transação para não
+    // estourar a lotação com duas reservas ao mesmo tempo. O motorista recebe aviso no sino.
+    createBooking(data: {
+      studentId?: number | string;
+      driverId?: number | string;
+      replace?: unknown;
+    }): Promise<{ id: number; status: BookingStatus }> {
       const input = data as Record<string, unknown>;
       const studentId = Number(text(input, "studentId"));
       const driverId = Number(text(input, "driverId"));
@@ -885,33 +1244,65 @@ function createRepository(db: Client) {
         const student = await getStudent(studentId, tx);
         const driver = await getDriver(driverId, tx);
         const existing = await get<{ id: number; status: BookingStatus }>(
-          "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?", [student.id, driver.id], tx);
-        if (existing && existing.status !== "Cancelado") throw new ApiError(409, "Você já reservou uma vaga nesta van.");
-        if (!driver.subscriptionActive) throw new ApiError(409, "Esta van não está recebendo novas reservas no momento.");
+          "SELECT id, status FROM bookings WHERE student_id = ? AND driver_id = ?",
+          [student.id, driver.id],
+          tx,
+        );
+        if (existing && existing.status !== "Cancelado")
+          throw new ApiError(409, "Você já reservou uma vaga nesta van.");
+        if (!driver.subscriptionActive)
+          throw new ApiError(409, "Esta van não está recebendo novas reservas no momento.");
         if (driver.freeSeats <= 0) throw new ApiError(409, "Esta van não tem vagas livres.");
         const others = await all<{ id: number; driverId: number }>(
-          "SELECT id, driver_id AS driverId FROM bookings WHERE student_id = ? AND driver_id <> ? AND status <> 'Cancelado'", [student.id, driver.id], tx);
+          "SELECT id, driver_id AS driverId FROM bookings WHERE student_id = ? AND driver_id <> ? AND status <> 'Cancelado'",
+          [student.id, driver.id],
+          tx,
+        );
         if (others.length > 0) {
           if (data.replace !== true) {
-            throw new ApiError(409, "Você já escolheu uma van. Cancele a reserva atual ou troque de van para escolher esta.");
+            throw new ApiError(
+              409,
+              "Você já escolheu uma van. Cancele a reserva atual ou troque de van para escolher esta.",
+            );
           }
           for (const other of others) {
             await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [other.id], tx);
-            await notify({ profile: "driver", id: other.driverId }, "Vaga liberada", `${student.name} trocou de van e saiu da sua rota.`, tx);
+            await notify(
+              { profile: "driver", id: other.driverId },
+              "Vaga liberada",
+              `${student.name} trocou de van e saiu da sua rota.`,
+              tx,
+            );
           }
         }
-        await notify({ profile: "driver", id: driver.id }, "Nova reserva", `${student.name} reservou uma vaga na sua van. Confirme ou recuse no painel.`, tx);
+        await notify(
+          { profile: "driver", id: driver.id },
+          "Nova reserva",
+          `${student.name} reservou uma vaga na sua van. Confirme ou recuse no painel.`,
+          tx,
+        );
         if (existing) {
-          await run("UPDATE bookings SET status = 'Aguardando', pickup = ? WHERE id = ?", [student.address, existing.id], tx);
+          await run(
+            "UPDATE bookings SET status = 'Aguardando', pickup = ? WHERE id = ?",
+            [student.address, existing.id],
+            tx,
+          );
           return { id: existing.id, status: "Aguardando" as const };
         }
-        const id = await run("INSERT INTO bookings (student_id, driver_id, pickup) VALUES (?, ?, ?)",
-          [student.id, driver.id, student.address], tx);
+        const id = await run(
+          "INSERT INTO bookings (student_id, driver_id, pickup) VALUES (?, ?, ?)",
+          [student.id, driver.id, student.address],
+          tx,
+        );
         return { id, status: "Aguardando" as const };
       });
     },
 
-    async updateBooking(id: number, { status, pickupTime }: { status?: string; pickupTime?: string | null }): Promise<Booking> {
+    // Motorista confirma/recusa a reserva ou define o horário de embarque; o estudante é avisado da decisão
+    async updateBooking(
+      id: number,
+      { status, pickupTime }: { status?: string; pickupTime?: string | null },
+    ): Promise<Booking> {
       if (status !== undefined && !bookingStatuses.includes(status as BookingStatus)) {
         throw new ApiError(400, "Status inválido.");
       }
@@ -925,19 +1316,26 @@ function createRepository(db: Client) {
       if (status !== undefined) await run("UPDATE bookings SET status = ? WHERE id = ?", [status, id]);
       if (status !== undefined && status !== before.status && status !== "Aguardando") {
         const row = (await get<{ studentId: number; driver: string }>(
-          "SELECT b.student_id AS studentId, d.name AS driver FROM bookings b JOIN drivers d ON d.id = b.driver_id WHERE b.id = ?", [id]))!;
-        await notify({ profile: "student", id: row.studentId },
+          "SELECT b.student_id AS studentId, d.name AS driver FROM bookings b JOIN drivers d ON d.id = b.driver_id WHERE b.id = ?",
+          [id],
+        ))!;
+        await notify(
+          { profile: "student", id: row.studentId },
           status === "Confirmado" ? "Reserva confirmada" : "Reserva recusada",
           status === "Confirmado"
             ? `${row.driver} confirmou sua vaga. Agora é só avisar no painel, todo dia, se você vai.`
-            : `${row.driver} não pôde confirmar sua vaga. Procure outra van no painel.`);
+            : `${row.driver} não pôde confirmar sua vaga. Procure outra van no painel.`,
+        );
       }
       if (pickupTime !== undefined) await run("UPDATE bookings SET pickup_time = ? WHERE id = ?", [pickupTime, id]);
       return getBooking(id);
     },
 
     // Conta usada no login (o e-mail é único dentro de cada perfil)
-    findAccount(profile: "student" | "driver", email: string): Promise<{ id: number; name: string; passwordHash: string | null } | undefined> {
+    findAccount(
+      profile: "student" | "driver",
+      email: string,
+    ): Promise<{ id: number; name: string; passwordHash: string | null } | undefined> {
       const table = profile === "student" ? "students" : "drivers";
       return get(`SELECT id, name, password_hash AS passwordHash FROM ${table} WHERE email = ?`, [email.trim()]);
     },
@@ -947,20 +1345,27 @@ function createRepository(db: Client) {
       return (user.profile === "student" ? await getStudent(user.id) : await getDriver(user.id)).name;
     },
 
+    // Grava a sessão (só o hash do token) e aproveita para limpar as sessões vencidas
     async createSession(tokenHash: string, user: SessionUser, days: number): Promise<void> {
       await run("DELETE FROM sessions WHERE expires_at <= datetime('now')");
-      await run(`INSERT INTO sessions (token_hash, profile, user_id, expires_at)
-                 VALUES (?, ?, ?, datetime('now', ?))`, [tokenHash, user.profile, user.id, `+${days} days`]);
+      await run(
+        `INSERT INTO sessions (token_hash, profile, user_id, expires_at)
+                 VALUES (?, ?, ?, datetime('now', ?))`,
+        [tokenHash, user.profile, user.id, `+${days} days`],
+      );
     },
 
     // Sessão válida (não expirada e de uma conta que ainda existe)
     getSession(tokenHash: string): Promise<SessionUser | undefined> {
-      return get<{ profile: Profile; id: number }>(`
+      return get<{ profile: Profile; id: number }>(
+        `
         SELECT se.profile, se.user_id AS id FROM sessions se
         WHERE se.token_hash = ? AND se.expires_at > datetime('now')
           AND (se.profile = 'admin'
             OR (se.profile = 'student' AND EXISTS (SELECT 1 FROM students WHERE id = se.user_id))
-            OR (se.profile = 'driver' AND EXISTS (SELECT 1 FROM drivers WHERE id = se.user_id)))`, [tokenHash]);
+            OR (se.profile = 'driver' AND EXISTS (SELECT 1 FROM drivers WHERE id = se.user_id)))`,
+        [tokenHash],
+      );
     },
 
     async deleteSession(tokenHash: string): Promise<void> {
@@ -977,7 +1382,8 @@ function createRepository(db: Client) {
     // Visão geral de todas as tabelas para a página de administração (/admin)
     async adminOverview() {
       const drivers = await all<DriverRow & { createdAt: string }>(
-        `${driverSummarySql.replace("d.rating,", "d.rating, d.created_at AS createdAt,")} ORDER BY d.id DESC`);
+        `${driverSummarySql.replace("d.rating,", "d.rating, d.created_at AS createdAt,")} ORDER BY d.id DESC`,
+      );
       return {
         colleges: await all<Record<string, unknown>>(`
           SELECT c.id, c.name,
@@ -989,15 +1395,22 @@ function createRepository(db: Client) {
           FROM students s JOIN colleges c ON c.id = s.college_id ORDER BY s.id DESC`),
         drivers: drivers.map((row) => {
           const driver = toDriver(row);
-          return { ...driver, cities: driver.cities.join(", "), colleges: driver.colleges.join(", "), createdAt: row.createdAt };
+          return {
+            ...driver,
+            cities: driver.cities.join(", "),
+            colleges: driver.colleges.join(", "),
+            createdAt: row.createdAt,
+          };
         }),
         bookings: await all<Record<string, unknown>>(`
           SELECT b.id, s.name AS student, d.name AS driver, b.pickup, b.pickup_time AS pickupTime, b.status, b.created_at AS createdAt
           FROM bookings b JOIN students s ON s.id = b.student_id JOIN drivers d ON d.id = b.driver_id ORDER BY b.id DESC`),
-        attendance: (await all<Record<string, unknown>>(`
+        attendance: (
+          await all<Record<string, unknown>>(`
           SELECT a.day, s.name AS student, d.name AS driver, a.going, a.updated_at AS createdAt
           FROM attendance a JOIN students s ON s.id = a.student_id JOIN drivers d ON d.id = a.driver_id
-          ORDER BY a.day DESC, a.updated_at DESC LIMIT 500`)).map((row, index) => ({ ...row, id: index + 1, going: row.going ? "Vai" : "Não vai" })),
+          ORDER BY a.day DESC, a.updated_at DESC LIMIT 500`)
+        ).map((row, index) => ({ ...row, id: index + 1, going: row.going ? "Vai" : "Não vai" })),
         searches: await all<Record<string, unknown>>(`
           SELECT se.id, se.address, c.name AS college, se.results, se.created_at AS createdAt
           FROM searches se JOIN colleges c ON c.id = se.college_id ORDER BY se.id DESC LIMIT 500`),
@@ -1019,17 +1432,29 @@ function createRepository(db: Client) {
           continue;
         }
         await run("UPDATE bookings SET status = 'Cancelado' WHERE id = ?", [row.id]);
-        await notify({ profile: "driver", id: row.driverId }, "Vaga liberada", `${row.name} ficou em uma van só e saiu da sua rota.`);
-        await notify({ profile: "student", id: row.studentId }, "Uma van por aluno",
-          "Você tinha mais de uma van reservada. Mantivemos a reserva confirmada (ou a mais recente) e cancelamos as outras.");
+        await notify(
+          { profile: "driver", id: row.driverId },
+          "Vaga liberada",
+          `${row.name} ficou em uma van só e saiu da sua rota.`,
+        );
+        await notify(
+          { profile: "student", id: row.studentId },
+          "Uma van por aluno",
+          "Você tinha mais de uma van reservada. Mantivemos a reserva confirmada (ou a mais recente) e cancelamos as outras.",
+        );
       }
-      await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_booking_per_student ON bookings(student_id) WHERE status <> 'Cancelado'");
+      await run(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_booking_per_student ON bookings(student_id) WHERE status <> 'Cancelado'",
+      );
     },
 
     // Senha (hash) da conta logada, para confirmar a exclusão
     async passwordHashOf(user: SessionUser): Promise<string | null> {
       const table = user.profile === "student" ? "students" : "drivers";
-      return (await get<{ hash: string | null }>(`SELECT password_hash AS hash FROM ${table} WHERE id = ?`, [user.id]))?.hash ?? null;
+      return (
+        (await get<{ hash: string | null }>(`SELECT password_hash AS hash FROM ${table} WHERE id = ?`, [user.id]))
+          ?.hash ?? null
+      );
     },
 
     // Exclui a conta e tudo o que depende dela (reservas, presenças, avisos e sessões)
@@ -1038,21 +1463,45 @@ function createRepository(db: Client) {
       await transaction(async (tx) => {
         if (user.profile === "student") {
           const driverIds = await all<{ driverId: number }>(
-            "SELECT DISTINCT driver_id AS driverId FROM bookings WHERE student_id = ? AND status <> 'Cancelado'", [user.id], tx);
+            "SELECT DISTINCT driver_id AS driverId FROM bookings WHERE student_id = ? AND status <> 'Cancelado'",
+            [user.id],
+            tx,
+          );
           const student = await getStudent(user.id, tx);
           for (const { driverId } of driverIds) {
-            await notify({ profile: "driver", id: driverId }, "Vaga liberada", `${student.name} excluiu a conta e saiu da sua van.`, tx);
+            await notify(
+              { profile: "driver", id: driverId },
+              "Vaga liberada",
+              `${student.name} excluiu a conta e saiu da sua van.`,
+              tx,
+            );
           }
-          for (const table of ["attendance", "bookings"]) await run(`DELETE FROM ${table} WHERE student_id = ?`, [user.id], tx);
+          for (const table of ["attendance", "bookings"])
+            await run(`DELETE FROM ${table} WHERE student_id = ?`, [user.id], tx);
           await run("DELETE FROM students WHERE id = ?", [user.id], tx);
         } else {
           const riders = await all<{ studentId: number }>(
-            "SELECT DISTINCT student_id AS studentId FROM bookings WHERE driver_id = ? AND status <> 'Cancelado'", [user.id], tx);
+            "SELECT DISTINCT student_id AS studentId FROM bookings WHERE driver_id = ? AND status <> 'Cancelado'",
+            [user.id],
+            tx,
+          );
           const driver = await getDriver(user.id, tx);
           for (const { studentId } of riders) {
-            await notify({ profile: "student", id: studentId }, "Van encerrada", `${driver.name} excluiu a conta. Escolha outra van no painel.`, tx);
+            await notify(
+              { profile: "student", id: studentId },
+              "Van encerrada",
+              `${driver.name} excluiu a conta. Escolha outra van no painel.`,
+              tx,
+            );
           }
-          for (const table of ["attendance", "route_runs", "bookings", "driver_cities", "driver_colleges", "driver_documents"]) {
+          for (const table of [
+            "attendance",
+            "route_runs",
+            "bookings",
+            "driver_cities",
+            "driver_colleges",
+            "driver_documents",
+          ]) {
             await run(`DELETE FROM ${table} WHERE driver_id = ?`, [user.id], tx);
           }
           await run("DELETE FROM drivers WHERE id = ?", [user.id], tx);
@@ -1072,7 +1521,8 @@ function createRepository(db: Client) {
     // Motoristas e passageiros de exemplo (com a senha pública DEMO_PASSWORD), só em banco vazio
     async seedDemoData(): Promise<void> {
       const { total } = (await get<{ total: number }>(
-        "SELECT (SELECT COUNT(*) FROM drivers) + (SELECT COUNT(*) FROM students) AS total"))!;
+        "SELECT (SELECT COUNT(*) FROM drivers) + (SELECT COUNT(*) FROM students) AS total",
+      ))!;
       if (total > 0) return;
       try {
         await insertDemoData();
@@ -1100,22 +1550,37 @@ function createRepository(db: Client) {
           const demoStudentIds = "SELECT id FROM students WHERE email LIKE ?";
           await run(`DELETE FROM attendance WHERE student_id IN (${demoStudentIds})`, [demoEmail], tx);
           await run(`DELETE FROM bookings WHERE student_id IN (${demoStudentIds})`, [demoEmail], tx);
-          await run(`DELETE FROM notifications WHERE profile = 'student' AND user_id IN (${demoStudentIds})`, [demoEmail], tx);
+          await run(
+            `DELETE FROM notifications WHERE profile = 'student' AND user_id IN (${demoStudentIds})`,
+            [demoEmail],
+            tx,
+          );
           await run("DELETE FROM students WHERE email LIKE ?", [demoEmail], tx);
         });
         return;
       }
-      const existing = new Set((await all<{ email: string }>(
-        "SELECT email FROM drivers WHERE email LIKE ?", [demoEmail])).map((row) => row.email.toLowerCase()));
+      const existing = new Set(
+        (await all<{ email: string }>("SELECT email FROM drivers WHERE email LIKE ?", [demoEmail])).map((row) =>
+          row.email.toLowerCase(),
+        ),
+      );
       for (const [index, van] of demoVans.entries()) {
         const email = `van-${van.key}@${DEMO_VAN_DOMAIN}`;
         if (existing.has(email)) continue;
         const number = String(index + 1).padStart(2, "0");
         try {
           await repo.createDriver({
-            name: `${van.name} (demo)`, phone: `(15) 90000-00${number}`, email, vanModel: van.vanModel,
-            plate: `DEM-${number[0]}A${number}`, capacity: van.capacity, departureTime: van.departureTime,
-            returnTime: DEMO_RETURN_TIME, rating: van.rating, cities: van.cities, colleges: defaultColleges,
+            name: `${van.name} (demo)`,
+            phone: `(15) 90000-00${number}`,
+            email,
+            vanModel: van.vanModel,
+            plate: `DEM-${number[0]}A${number}`,
+            capacity: van.capacity,
+            departureTime: van.departureTime,
+            returnTime: DEMO_RETURN_TIME,
+            rating: van.rating,
+            cities: van.cities,
+            colleges: defaultColleges,
             // sem passwordHash: a conta não tem senha e o login sempre falha
           });
         } catch (error) {
@@ -1123,12 +1588,21 @@ function createRepository(db: Client) {
           if (!(error instanceof ApiError && error.status === 409)) throw error;
         }
       }
-      await run(`INSERT OR IGNORE INTO driver_colleges (driver_id, college_id)
-                 SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`, [demoEmail]);
+      await run(
+        `INSERT OR IGNORE INTO driver_colleges (driver_id, college_id)
+                 SELECT d.id, c.id FROM drivers d, colleges c WHERE d.email LIKE ?`,
+        [demoEmail],
+      );
       // vans criadas antes do horário de volta existir
-      await run("UPDATE drivers SET return_time = ? WHERE email LIKE ? AND return_time IS NULL", [DEMO_RETURN_TIME, demoEmail]);
+      await run("UPDATE drivers SET return_time = ? WHERE email LIKE ? AND return_time IS NULL", [
+        DEMO_RETURN_TIME,
+        demoEmail,
+      ]);
       await repo.syncDemoStudents();
-      const real = await all<{ id: number; name: string; email: string }>("SELECT id, name, email FROM drivers WHERE email NOT LIKE ?", [demoEmail]);
+      const real = await all<{ id: number; name: string; email: string }>(
+        "SELECT id, name, email FROM drivers WHERE email NOT LIKE ?",
+        [demoEmail],
+      );
       for (const driver of real) if (isCoringaDriver(driver)) await repo.ensureCoringas(driver.id);
     },
 
@@ -1138,8 +1612,13 @@ function createRepository(db: Client) {
       if (process.env.DEMO_VANS === "false") return;
       const driver = await getDriver(driverId);
       if (isDemoEmail(driver.email) || !isCoringaDriver(driver)) return;
-      const existing = new Set((await all<{ email: string }>(
-        "SELECT email FROM students WHERE email LIKE ?", [`coringa-${driverId}-%@${DEMO_VAN_DOMAIN}`])).map((row) => row.email));
+      const existing = new Set(
+        (
+          await all<{ email: string }>("SELECT email FROM students WHERE email LIKE ?", [
+            `coringa-${driverId}-%@${DEMO_VAN_DOMAIN}`,
+          ])
+        ).map((row) => row.email),
+      );
       let occupied = driver.occupied;
       for (const [index, [name, address, lat, lng]] of coringaStudents.entries()) {
         const email = `coringa-${driverId}-${index + 1}@${DEMO_VAN_DOMAIN}`;
@@ -1147,11 +1626,19 @@ function createRepository(db: Client) {
         if (occupied >= driver.capacity) break;
         try {
           const student = await repo.createStudent({
-            name: `${name} (coringa)`, phone: "(15) 90000-0000", email, address, college: driver.colleges[index % driver.colleges.length],
+            name: `${name} (coringa)`,
+            phone: "(15) 90000-0000",
+            email,
+            address,
+            college: driver.colleges[index % driver.colleges.length],
           });
           await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [lat, lng, student.id]);
           // direto no banco: o aluno coringa entra mesmo se a assinatura do motorista estiver vencida
-          await run("INSERT INTO bookings (student_id, driver_id, pickup, status) VALUES (?, ?, ?, 'Confirmado')", [student.id, driverId, address]);
+          await run("INSERT INTO bookings (student_id, driver_id, pickup, status) VALUES (?, ?, ?, 'Confirmado')", [
+            student.id,
+            driverId,
+            address,
+          ]);
           occupied++;
         } catch (error) {
           if (!(error instanceof ApiError)) throw error;
@@ -1162,17 +1649,28 @@ function createRepository(db: Client) {
     // Alunos fictícios dentro das vans de demonstração, com endereço e posição fixos. Idempotente.
     async syncDemoStudents(): Promise<void> {
       const demoEmail = `%@${DEMO_VAN_DOMAIN}`;
-      const existing = new Set((await all<{ email: string }>(
-        "SELECT email FROM students WHERE email LIKE ?", [demoEmail])).map((row) => row.email.toLowerCase()));
+      const existing = new Set(
+        (await all<{ email: string }>("SELECT email FROM students WHERE email LIKE ?", [demoEmail])).map((row) =>
+          row.email.toLowerCase(),
+        ),
+      );
       for (const [key, students] of Object.entries(demoStudents)) {
-        const driver = await get<{ id: number }>("SELECT id FROM drivers WHERE email = ?", [`van-${key}@${DEMO_VAN_DOMAIN}`]);
+        const driver = await get<{ id: number }>("SELECT id FROM drivers WHERE email = ?", [
+          `van-${key}@${DEMO_VAN_DOMAIN}`,
+        ]);
         if (!driver) continue;
         for (const [index, [name, address, lat, lng, college]] of students.entries()) {
           const email = `aluno-${key}-${index + 1}@${DEMO_VAN_DOMAIN}`;
           if (existing.has(email)) continue;
           try {
             // sem passwordHash: a conta não tem senha e o login sempre falha
-            const student = await repo.createStudent({ name: `${name} (demo)`, phone: "(15) 90000-0000", email, address, college });
+            const student = await repo.createStudent({
+              name: `${name} (demo)`,
+              phone: "(15) 90000-0000",
+              email,
+              address,
+              college,
+            });
             await run("UPDATE students SET lat = ?, lng = ? WHERE id = ?", [lat, lng, student.id]);
             const booking = await repo.createBooking({ studentId: student.id, driverId: driver.id });
             await repo.updateBooking(booking.id, { status: "Confirmado" });
@@ -1187,9 +1685,48 @@ function createRepository(db: Client) {
 
   async function insertDemoData(): Promise<void> {
     const passwordHash = hashPasswordSync(DEMO_PASSWORD);
-    const carlos = await repo.createDriver({ name: "Carlos Eduardo", phone: "(15) 99999-0001", email: "carlos@rotau.com", vanModel: "Renault Master", plate: "ROT-1A01", capacity: 12, departureTime: "17:30", returnTime: "22:40", rating: 4.9, cities: "Centro, Sorocaba", colleges: "UniFacens, Fatec, Uniso, Unip", passwordHash });
-    await repo.createDriver({ name: "Fernanda Lima", phone: "(15) 99999-0002", email: "fernanda@rotau.com", vanModel: "Mercedes Sprinter", plate: "ROT-2B02", capacity: 15, departureTime: "18:00", returnTime: "22:50", rating: 4.8, cities: "Zona Norte, Sorocaba", colleges: "Fatec, Ufscar", passwordHash });
-    await repo.createDriver({ name: "Roberto Alves", phone: "(15) 99999-0003", email: "roberto@rotau.com", vanModel: "Fiat Ducato", plate: "ROT-3C03", capacity: 14, departureTime: "18:20", returnTime: "23:00", rating: 4.9, cities: "Jd. Europa, Sorocaba", colleges: "Uniso, UniFacens", passwordHash });
+    const carlos = await repo.createDriver({
+      name: "Carlos Eduardo",
+      phone: "(15) 99999-0001",
+      email: "carlos@rotau.com",
+      vanModel: "Renault Master",
+      plate: "ROT-1A01",
+      capacity: 12,
+      departureTime: "17:30",
+      returnTime: "22:40",
+      rating: 4.9,
+      cities: "Centro, Sorocaba",
+      colleges: "UniFacens, Fatec, Uniso, Unip",
+      passwordHash,
+    });
+    await repo.createDriver({
+      name: "Fernanda Lima",
+      phone: "(15) 99999-0002",
+      email: "fernanda@rotau.com",
+      vanModel: "Mercedes Sprinter",
+      plate: "ROT-2B02",
+      capacity: 15,
+      departureTime: "18:00",
+      returnTime: "22:50",
+      rating: 4.8,
+      cities: "Zona Norte, Sorocaba",
+      colleges: "Fatec, Ufscar",
+      passwordHash,
+    });
+    await repo.createDriver({
+      name: "Roberto Alves",
+      phone: "(15) 99999-0003",
+      email: "roberto@rotau.com",
+      vanModel: "Fiat Ducato",
+      plate: "ROT-3C03",
+      capacity: 14,
+      departureTime: "18:20",
+      returnTime: "23:00",
+      rating: 4.9,
+      cities: "Jd. Europa, Sorocaba",
+      colleges: "Uniso, UniFacens",
+      passwordHash,
+    });
     // motoristas de exemplo com a assinatura sempre em dia
     await run("UPDATE drivers SET subscription_until = '2099-12-31'");
     const passengers: [string, string, string, string, string, BookingStatus][] = [
@@ -1199,7 +1736,14 @@ function createRepository(db: Client) {
       ["Pedro Martins", "pedro@email.com", "Jd. Faculdade", "Unip", "18:20", "Confirmado"],
     ];
     for (const [name, email, address, college, pickupTime, status] of passengers) {
-      const student = await repo.createStudent({ name, email, address, college, phone: "(15) 98888-0000", passwordHash });
+      const student = await repo.createStudent({
+        name,
+        email,
+        address,
+        college,
+        phone: "(15) 98888-0000",
+        passwordHash,
+      });
       const booking = await repo.createBooking({ studentId: student.id, driverId: carlos.id });
       await repo.updateBooking(booking.id, { status, pickupTime });
     }

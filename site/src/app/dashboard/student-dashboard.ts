@@ -1,11 +1,22 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, output, signal } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { ApiRequestError, ApiService, type Student, type StudentToday, type TodayLeg, type Van } from "../api.service";
+import { firstName, formatRating } from "../shared/format";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
 import { DeleteAccount } from "./delete-account";
-import { PresenceCard } from "./presence-card";
 import { POLL_MS } from "./notification-bell";
+import { PresenceCard } from "./presence-card";
 import { StatusMessage } from "./status-message";
 
 // Painel do estudante: "Você vai hoje?", horários de ida e volta e as vans da faculdade
@@ -58,16 +69,14 @@ export class StudentDashboard implements OnInit {
   }
 
   refreshToday() {
-    this.api.today().then((today) => this.today.set(today), () => {});
+    this.api.today().then(
+      (today) => this.today.set(today),
+      () => {},
+    );
   }
 
-  rating(value: number) {
-    return value.toFixed(1).replace(".", ",");
-  }
-
-  firstName(name: string) {
-    return name.split(" ")[0];
-  }
+  readonly rating = formatRating;
+  readonly firstName = firstName;
 
   async setGoing(going: boolean) {
     this.saving.set(true);
@@ -96,7 +105,9 @@ export class StudentDashboard implements OnInit {
   // Texto de cada perna da viagem, como na tela de referência
   legText(leg: TodayLeg, going: boolean | null): string {
     if (going === false) return "Você avisou que não vai hoje, então a van não passa no seu ponto.";
-    const scheduled = leg.scheduled ? `Saída programada às ${leg.scheduled}.` : "Horário de saída a combinar com o motorista.";
+    const scheduled = leg.scheduled
+      ? `Saída programada às ${leg.scheduled}.`
+      : "Horário de saída a combinar com o motorista.";
     if (!leg.startedAt) {
       if (leg.eta) {
         const ride = leg.rideMinutes ? ` Tempo na van: cerca de ${leg.rideMinutes} min.` : "";

@@ -41,7 +41,11 @@ export function createApp(
   let repo: Repository;
   const app = express();
   // Atrás de um proxy HTTPS (ex.: hospedagem), defina TRUST_PROXY para o Express ver o IP e o protocolo reais
-  if (process.env.TRUST_PROXY) app.set("trust proxy", /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY);
+  if (process.env.TRUST_PROXY)
+    app.set(
+      "trust proxy",
+      /^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY,
+    );
   app.disable("x-powered-by");
   // Envio de documentos do motorista: JSON maior só nesta rota (o arquivo vai em base64)
   app.use("/api/drivers/:id/documents", express.json({ limit: MAX_DOCUMENT_JSON }));
@@ -77,12 +81,14 @@ export function createApp(
       .catch(next);
   });
 
-  const route = (handler: (req: Request, res: Response) => unknown, status?: number): RequestHandler => (req, res, next) => {
-    Promise.resolve()
-      .then(() => handler(req, res))
-      .then((result) => res.status(status ?? (req.method === "POST" ? 201 : 200)).json(result))
-      .catch(next);
-  };
+  const route =
+    (handler: (req: Request, res: Response) => unknown, status?: number): RequestHandler =>
+    (req, res, next) => {
+      Promise.resolve()
+        .then(() => handler(req, res))
+        .then((result) => res.status(status ?? (req.method === "POST" ? 201 : 200)).json(result))
+        .catch(next);
+    };
   const id = (value: unknown): number => {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed <= 0) throw new ApiError(400, "Identificador inválido.");
@@ -121,12 +127,21 @@ export function createApp(
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
-  app.get("/api/colleges", route(() => repo.listColleges()));
-  app.post("/api/searches", route((req) => repo.searchRoutes(body(req))));
+  app.get(
+    "/api/colleges",
+    route(() => repo.listColleges()),
+  );
+  app.post(
+    "/api/searches",
+    route((req) => repo.searchRoutes(body(req))),
+  );
 
   // Termos de segurança e conduta (RF010): texto público e PDF para exportar.
   // Com ?driverId, o PDF traz o aceite digital desse motorista; só ele ou um aluno com reserva na van dele pode pedir.
-  app.get("/api/terms", route(() => termsDocument));
+  app.get(
+    "/api/terms",
+    route(() => termsDocument),
+  );
   app.get("/api/terms.pdf", async (req, res, next) => {
     try {
       let acceptance;
@@ -134,213 +149,313 @@ export function createApp(
         const driverId = id(req.query.driverId);
         const user = res.locals.user as SessionUser | undefined;
         if (!user) throw new ApiError(401, "Faça login para continuar.");
-        const allowed = (user.profile === "driver" && user.id === driverId)
-          || (user.profile === "student" && (await repo.studentDriverId(user.id)) === driverId);
+        const allowed =
+          (user.profile === "driver" && user.id === driverId) ||
+          (user.profile === "student" && (await repo.studentDriverId(user.id)) === driverId);
         if (!allowed) throw new ApiError(403, "Você não tem permissão para acessar estes dados.");
         acceptance = await repo.termsAcceptance(driverId);
       }
-      res.status(200)
+      res
+        .status(200)
         .type("application/pdf")
         .set("Content-Disposition", 'attachment; filename="termos-rotau.pdf"')
         .set("Cache-Control", "private, no-store")
         .send(termsPdf(acceptance));
-    } catch (error) { next(error); }
+    } catch (error) {
+      next(error);
+    }
   });
 
   // Cadastro: cria a conta com senha e já deixa o usuário logado
-  app.post("/api/students", route(async (req, res) => {
-    const data = body(req) as Record<string, unknown>;
-    if (String(data.email ?? "").toLowerCase().endsWith(`@${DEMO_VAN_DOMAIN}`)) throw new ApiError(400, "Use um e-mail real para criar a conta.");
-    const passwordHash = await hashPassword(validatePassword(data.password));
-    const student = await repo.createStudent({ ...data, passwordHash });
-    await repo.locateStudent(student.id);
-    await startSession(req, res, { profile: "student", id: student.id });
-    return student;
-  }));
-  app.get("/api/students/:id", route((req, res) => {
-    const studentId = id(req.params.id);
-    requireUser(res, "student", studentId);
-    return repo.getStudent(studentId);
-  }));
+  app.post(
+    "/api/students",
+    route(async (req, res) => {
+      const data = body(req) as Record<string, unknown>;
+      if (
+        String(data.email ?? "")
+          .toLowerCase()
+          .endsWith(`@${DEMO_VAN_DOMAIN}`)
+      )
+        throw new ApiError(400, "Use um e-mail real para criar a conta.");
+      const passwordHash = await hashPassword(validatePassword(data.password));
+      const student = await repo.createStudent({ ...data, passwordHash });
+      await repo.locateStudent(student.id);
+      await startSession(req, res, { profile: "student", id: student.id });
+      return student;
+    }),
+  );
+  app.get(
+    "/api/students/:id",
+    route((req, res) => {
+      const studentId = id(req.params.id);
+      requireUser(res, "student", studentId);
+      return repo.getStudent(studentId);
+    }),
+  );
 
-  app.post("/api/drivers", route(async (req, res) => {
-    const data = body(req) as Record<string, unknown>;
-    const passwordHash = await hashPassword(validatePassword(data.password));
-    const driver = await repo.createDriver({ ...data, passwordHash });
-    if (data.acceptTerms === true) await repo.acceptTerms(driver.id);
-    await startSession(req, res, { profile: "driver", id: driver.id });
-    return driver;
-  }));
-  app.get("/api/drivers/:id", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.getDriver(driverId);
-  }));
-  app.get("/api/drivers/:id/dashboard", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.driverDashboard(driverId);
-  }));
+  app.post(
+    "/api/drivers",
+    route(async (req, res) => {
+      const data = body(req) as Record<string, unknown>;
+      const passwordHash = await hashPassword(validatePassword(data.password));
+      const driver = await repo.createDriver({ ...data, passwordHash });
+      if (data.acceptTerms === true) await repo.acceptTerms(driver.id);
+      await startSession(req, res, { profile: "driver", id: driver.id });
+      return driver;
+    }),
+  );
+  app.get(
+    "/api/drivers/:id",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.getDriver(driverId);
+    }),
+  );
+  app.get(
+    "/api/drivers/:id/dashboard",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.driverDashboard(driverId);
+    }),
+  );
   // Assinatura mensal do motorista (pagamento ainda simulado)
-  app.get("/api/drivers/:id/subscription", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.subscription(driverId);
-  }));
-  app.post("/api/drivers/:id/subscription", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.subscribe(driverId);
-  }, 200));
+  app.get(
+    "/api/drivers/:id/subscription",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.subscription(driverId);
+    }),
+  );
+  app.post(
+    "/api/drivers/:id/subscription",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.subscribe(driverId);
+    }, 200),
+  );
   // Documentos do motorista (CNH e CRLV): só o próprio motorista lista, envia, baixa e apaga
-  app.get("/api/drivers/:id/documents", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.listDocuments(driverId);
-  }));
-  app.put("/api/drivers/:id/documents/:kind", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.saveDocument(driverId, documentKind(req.params.kind), readUpload(body(req)));
-  }, 200));
+  app.get(
+    "/api/drivers/:id/documents",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.listDocuments(driverId);
+    }),
+  );
+  app.put(
+    "/api/drivers/:id/documents/:kind",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.saveDocument(driverId, documentKind(req.params.kind), readUpload(body(req)));
+    }, 200),
+  );
   app.get("/api/drivers/:id/documents/:kind/file", async (req, res, next) => {
     try {
       const driverId = id(req.params.id);
       requireUser(res, "driver", driverId);
       const file = await repo.getDocument(driverId, documentKind(req.params.kind));
-      res.status(200)
+      res
+        .status(200)
         .type(file.mime)
-        .set("Content-Disposition", `attachment; filename="${req.params.kind}${{ "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" }[file.mime]}"`)
+        .set(
+          "Content-Disposition",
+          `attachment; filename="${req.params.kind}${{ "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" }[file.mime]}"`,
+        )
         .set("Cache-Control", "private, no-store")
         .set("X-Content-Type-Options", "nosniff")
         .send(file.bytes);
-    } catch (error) { next(error); }
+    } catch (error) {
+      next(error);
+    }
   });
-  app.delete("/api/drivers/:id/documents/:kind", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.deleteDocument(driverId, documentKind(req.params.kind));
-  }));
+  app.delete(
+    "/api/drivers/:id/documents/:kind",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.deleteDocument(driverId, documentKind(req.params.kind));
+    }),
+  );
 
   // Aceite digital dos termos de segurança e conduta
-  app.post("/api/drivers/:id/terms-acceptance", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.acceptTerms(driverId);
-  }, 200));
+  app.post(
+    "/api/drivers/:id/terms-acceptance",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.acceptTerms(driverId);
+    }, 200),
+  );
   // Motorista inicia a ida ou a volta do dia (avisa quem vai hoje)
-  app.post("/api/drivers/:id/route-runs", route((req, res) => {
-    const driverId = id(req.params.id);
-    requireUser(res, "driver", driverId);
-    return repo.startRoute(driverId, body(req).leg);
-  }));
+  app.post(
+    "/api/drivers/:id/route-runs",
+    route((req, res) => {
+      const driverId = id(req.params.id);
+      requireUser(res, "driver", driverId);
+      return repo.startRoute(driverId, body(req).leg);
+    }),
+  );
 
   // Presença do dia: o estudante logado vê e diz se vai hoje
-  app.get("/api/attendance/today", route(async (_req, res) => {
-    const { id } = requireUser(res, "student");
-    await repo.locateStudent(id);
-    return repo.studentToday(id);
-  }));
-  app.put("/api/attendance/today", route((req, res) => repo.setAttendance(requireUser(res, "student").id, body(req).going)));
+  app.get(
+    "/api/attendance/today",
+    route(async (_req, res) => {
+      const { id } = requireUser(res, "student");
+      await repo.locateStudent(id);
+      return repo.studentToday(id);
+    }),
+  );
+  app.put(
+    "/api/attendance/today",
+    route((req, res) => repo.setAttendance(requireUser(res, "student").id, body(req).going)),
+  );
 
   // Avisos do sino do painel (estudante ou motorista logado)
-  app.get("/api/notifications", route((_req, res) => repo.notifications(currentUser(res))));
-  app.post("/api/notifications/read", route((_req, res) => repo.markNotificationsRead(currentUser(res)), 200));
+  app.get(
+    "/api/notifications",
+    route((_req, res) => repo.notifications(currentUser(res))),
+  );
+  app.post(
+    "/api/notifications/read",
+    route((_req, res) => repo.markNotificationsRead(currentUser(res)), 200),
+  );
 
   // Login, logout e "quem sou eu"
-  app.post("/api/auth/login", route(async (req, res) => {
-    const { profile, email, password } = body(req) as Record<string, unknown>;
-    if (profile !== "student" && profile !== "driver") throw new ApiError(400, "Escolha o perfil: estudante ou motorista.");
-    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
-      throw new ApiError(400, "Informe e-mail e senha.");
-    }
-    const key = `${req.ip}|${profile}|${email.trim().toLowerCase()}`;
-    limiter.check(key);
-    const account = await repo.findAccount(profile, email);
-    if (!(await verifyPassword(password, account?.passwordHash)) || !account) {
-      limiter.fail(key);
-      throw new ApiError(401, "E-mail ou senha incorretos.");
-    }
-    limiter.reset(key);
-    return startSession(req, res, { profile, id: account.id });
-  }, 200));
+  app.post(
+    "/api/auth/login",
+    route(async (req, res) => {
+      const { profile, email, password } = body(req) as Record<string, unknown>;
+      if (profile !== "student" && profile !== "driver")
+        throw new ApiError(400, "Escolha o perfil: estudante ou motorista.");
+      if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
+        throw new ApiError(400, "Informe e-mail e senha.");
+      }
+      const key = `${req.ip}|${profile}|${email.trim().toLowerCase()}`;
+      limiter.check(key);
+      const account = await repo.findAccount(profile, email);
+      if (!(await verifyPassword(password, account?.passwordHash)) || !account) {
+        limiter.fail(key);
+        throw new ApiError(401, "E-mail ou senha incorretos.");
+      }
+      limiter.reset(key);
+      return startSession(req, res, { profile, id: account.id });
+    }, 200),
+  );
 
-  app.post("/api/auth/logout", route(async (req, res) => {
-    const token = readSessionCookie(req);
-    if (token) await repo.deleteSession(hashToken(token));
-    clearSessionCookie(req, res);
-    return { ok: true };
-  }, 200));
+  app.post(
+    "/api/auth/logout",
+    route(async (req, res) => {
+      const token = readSessionCookie(req);
+      if (token) await repo.deleteSession(hashToken(token));
+      clearSessionCookie(req, res);
+      return { ok: true };
+    }, 200),
+  );
 
   // Excluir a própria conta (estudante ou motorista): pede a senha de novo
-  app.post("/api/account/delete", route(async (req, res) => {
-    const user = currentUser(res);
-    const { password } = body(req) as Record<string, unknown>;
-    const key = `${req.ip}|delete|${user.profile}|${user.id}`;
-    limiter.check(key);
-    if (typeof password !== "string" || !(await verifyPassword(password, await repo.passwordHashOf(user)))) {
-      limiter.fail(key);
-      throw new ApiError(401, "Senha incorreta.");
-    }
-    limiter.reset(key);
-    await repo.deleteAccount(user);
-    clearSessionCookie(req, res);
-    return { ok: true };
-  }, 200));
+  app.post(
+    "/api/account/delete",
+    route(async (req, res) => {
+      const user = currentUser(res);
+      const { password } = body(req) as Record<string, unknown>;
+      const key = `${req.ip}|delete|${user.profile}|${user.id}`;
+      limiter.check(key);
+      if (typeof password !== "string" || !(await verifyPassword(password, await repo.passwordHashOf(user)))) {
+        limiter.fail(key);
+        throw new ApiError(401, "Senha incorreta.");
+      }
+      limiter.reset(key);
+      await repo.deleteAccount(user);
+      clearSessionCookie(req, res);
+      return { ok: true };
+    }, 200),
+  );
 
-  app.get("/api/auth/me", route(async (_req, res) => {
-    const user = res.locals.user as SessionUser | undefined;
-    if (!user) throw new ApiError(401, "Você não está logado.");
-    return { ...user, name: await repo.accountName(user) };
-  }));
+  app.get(
+    "/api/auth/me",
+    route(async (_req, res) => {
+      const user = res.locals.user as SessionUser | undefined;
+      if (!user) throw new ApiError(401, "Você não está logado.");
+      return { ...user, name: await repo.accountName(user) };
+    }),
+  );
 
   // Vans de uma faculdade são públicas; com login de estudante, mostra as dele e marca as reservadas
-  app.get("/api/vans", route((req, res) => {
-    if (typeof req.query.college === "string" && res.locals.user?.profile !== "student") return repo.listVans({ college: req.query.college });
-    const student = requireUser(res, "student", req.query.studentId ? id(req.query.studentId) : undefined);
-    return repo.listVans({ studentId: student.id });
-  }));
+  app.get(
+    "/api/vans",
+    route((req, res) => {
+      if (typeof req.query.college === "string" && res.locals.user?.profile !== "student")
+        return repo.listVans({ college: req.query.college });
+      const student = requireUser(res, "student", req.query.studentId ? id(req.query.studentId) : undefined);
+      return repo.listVans({ studentId: student.id });
+    }),
+  );
 
   // Página de uma van (estudante logado, só vans da faculdade dele)
-  app.get("/api/vans/:id", route((req, res) => repo.vanDetail(id(req.params.id), requireUser(res, "student").id)));
+  app.get(
+    "/api/vans/:id",
+    route((req, res) => repo.vanDetail(id(req.params.id), requireUser(res, "student").id)),
+  );
 
   // Estudante reserva vaga para si mesmo, numa van só (replace: true troca a van atual por esta)
-  app.post("/api/bookings", route((req, res) => {
-    const student = requireUser(res, "student");
-    const { driverId, replace } = body(req) as Record<string, unknown>;
-    return repo.createBooking({ studentId: student.id, driverId: driverId as number, replace });
-  }));
+  app.post(
+    "/api/bookings",
+    route((req, res) => {
+      const student = requireUser(res, "student");
+      const { driverId, replace } = body(req) as Record<string, unknown>;
+      return repo.createBooking({ studentId: student.id, driverId: driverId as number, replace });
+    }),
+  );
   // Estudante cancela a própria reserva
-  app.post("/api/bookings/:id/cancel", route((req, res) => repo.cancelBooking(requireUser(res, "student").id, id(req.params.id)), 200));
+  app.post(
+    "/api/bookings/:id/cancel",
+    route((req, res) => repo.cancelBooking(requireUser(res, "student").id, id(req.params.id)), 200),
+  );
   // Só o motorista da van confirma ou recusa a reserva
-  app.patch("/api/bookings/:id", route(async (req, res) => {
-    const bookingId = id(req.params.id);
-    requireUser(res, "driver", await repo.bookingDriverId(bookingId));
-    const { status, pickupTime } = body(req);
-    return repo.updateBooking(bookingId, { status, pickupTime });
-  }));
+  app.patch(
+    "/api/bookings/:id",
+    route(async (req, res) => {
+      const bookingId = id(req.params.id);
+      requireUser(res, "driver", await repo.bookingDriverId(bookingId));
+      const { status, pickupTime } = body(req);
+      return repo.updateBooking(bookingId, { status, pickupTime });
+    }),
+  );
 
   // Painel de administração: exige login com a senha definida em ADMIN_PASSWORD.
   // Sem essa variável, o painel fica desativado.
-  app.post("/api/admin/login", route(async (req, res) => {
-    if (!adminPassword) throw new ApiError(503, "Painel desativado: defina a variável ADMIN_PASSWORD no servidor.");
-    const { password } = body(req) as Record<string, unknown>;
-    const key = `${req.ip}|admin`;
-    limiter.check(key);
-    const given = createHash("sha256").update(String(password ?? "")).digest();
-    const expected = createHash("sha256").update(adminPassword).digest();
-    if (!timingSafeEqual(given, expected)) {
-      limiter.fail(key);
-      throw new ApiError(401, "Senha de administrador incorreta.");
-    }
-    limiter.reset(key);
-    return startSession(req, res, { profile: "admin", id: 0 });
-  }, 200));
-  app.get("/api/admin/overview", route((_req, res) => {
-    if (!adminPassword) throw new ApiError(503, "Painel desativado: defina a variável ADMIN_PASSWORD no servidor.");
-    requireUser(res, "admin");
-    return repo.adminOverview();
-  }));
+  app.post(
+    "/api/admin/login",
+    route(async (req, res) => {
+      if (!adminPassword) throw new ApiError(503, "Painel desativado: defina a variável ADMIN_PASSWORD no servidor.");
+      const { password } = body(req) as Record<string, unknown>;
+      const key = `${req.ip}|admin`;
+      limiter.check(key);
+      const given = createHash("sha256")
+        .update(String(password ?? ""))
+        .digest();
+      const expected = createHash("sha256").update(adminPassword).digest();
+      if (!timingSafeEqual(given, expected)) {
+        limiter.fail(key);
+        throw new ApiError(401, "Senha de administrador incorreta.");
+      }
+      limiter.reset(key);
+      return startSession(req, res, { profile: "admin", id: 0 });
+    }, 200),
+  );
+  app.get(
+    "/api/admin/overview",
+    route((_req, res) => {
+      if (!adminPassword) throw new ApiError(503, "Painel desativado: defina a variável ADMIN_PASSWORD no servidor.");
+      requireUser(res, "admin");
+      return repo.adminOverview();
+    }),
+  );
 
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Rota não encontrada." });

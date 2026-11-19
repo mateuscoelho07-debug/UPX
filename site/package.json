@@ -10,7 +10,9 @@
     "serve:ssr": "node dist/rotau/server/server.mjs",
     "test": "ng test --watch=false",
     "test:api": "node --experimental-strip-types --no-warnings --test src/server/api.test.ts src/server/route.test.ts",
-    "typecheck": "ngc -p tsconfig.app.json && tsc -p tsconfig.spec.json"
+    "typecheck": "ngc -p tsconfig.app.json && tsc -p tsconfig.spec.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@angular/common": "^22.2.3",
@@ -34,6 +36,7 @@
     "@types/node": "^24.0.0",
     "jsdom": "^30.0.0",
     "postcss": "^8.5.0",
+    "prettier": "^3.10.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "vitest": "^5.0.0"

@@ -36,7 +36,12 @@ export function subscriptionConfig(env: NodeJS.ProcessEnv = process.env): Subscr
 }
 
 // Motoristas de demonstração nunca vencem; com a cobrança desligada, ninguém vence
-export function isSubscriptionActive(until: string | null, today: string, demo: boolean, config = subscriptionConfig()): boolean {
+export function isSubscriptionActive(
+  until: string | null,
+  today: string,
+  demo: boolean,
+  config = subscriptionConfig(),
+): boolean {
   return !config.enabled || demo || (until !== null && until >= today);
 }
 
@@ -50,7 +55,12 @@ export function renewedUntil(until: string | null, today: string, days: number):
   return addDays(until !== null && until >= today ? until : today, days);
 }
 
-export function subscriptionInfo(until: string | null, today: string, demo: boolean, config = subscriptionConfig()): SubscriptionInfo {
+export function subscriptionInfo(
+  until: string | null,
+  today: string,
+  demo: boolean,
+  config = subscriptionConfig(),
+): SubscriptionInfo {
   return {
     enabled: config.enabled && !demo,
     price: config.price,

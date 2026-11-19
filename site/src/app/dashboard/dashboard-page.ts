@@ -11,9 +11,15 @@ import { StudentDashboard } from "./student-dashboard";
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @switch (session()?.profile) {
-      @case ("student") { <app-student-dashboard [studentId]="session()!.id" (logout)="logout()" /> }
-      @case ("driver") { <app-driver-dashboard [driverId]="session()!.id" (logout)="logout()" /> }
-      @default { <p class="p-10 text-slate-500">Carregando...</p> }
+      @case ("student") {
+        <app-student-dashboard [studentId]="session()!.id" (logout)="logout()" />
+      }
+      @case ("driver") {
+        <app-driver-dashboard [driverId]="session()!.id" (logout)="logout()" />
+      }
+      @default {
+        <p class="p-10 text-slate-500">Carregando...</p>
+      }
     }
   `,
 })

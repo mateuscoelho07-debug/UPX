@@ -13,19 +13,30 @@ export const POLL_MS = 30_000;
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: "relative" },
   template: `
-    <button class="relative grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-      (click)="toggle()" [attr.aria-expanded]="open()" [attr.aria-label]="unread() ? unread() + ' avisos novos' : 'Avisos'">
+    <button
+      class="relative grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+      (click)="toggle()"
+      [attr.aria-expanded]="open()"
+      [attr.aria-label]="unread() ? unread() + ' avisos novos' : 'Avisos'"
+    >
       <app-icon name="bell" class="size-5" />
       @if (unread()) {
-        <span class="absolute -right-1.5 -top-1.5 grid min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[11px] font-extrabold leading-5 text-white">{{ unread() > 9 ? "9+" : unread() }}</span>
+        <span
+          class="absolute -right-1.5 -top-1.5 grid min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[11px] font-extrabold leading-5 text-white"
+          >{{ unread() > 9 ? "9+" : unread() }}</span
+        >
       }
     </button>
     @if (open()) {
-      <div class="absolute right-0 z-30 mt-2 w-[min(22rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-blue-900/10">
+      <div
+        class="absolute right-0 z-30 mt-2 w-[min(22rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-2xl shadow-blue-900/10"
+      >
         <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
           <strong class="text-sm text-slate-950">Avisos</strong>
           @if (canAskPermission()) {
-            <button class="text-xs font-bold text-blue-600 hover:underline" (click)="askPermission()">Avisar também no navegador</button>
+            <button class="text-xs font-bold text-blue-600 hover:underline" (click)="askPermission()">
+              Avisar também no navegador
+            </button>
           }
         </div>
         <div class="max-h-96 divide-y divide-slate-100 overflow-y-auto">
@@ -82,7 +93,8 @@ export class NotificationBell {
 
   private showInBrowser(items: Notification[]) {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
-    for (const item of items.slice(0, 3)) new Notification(item.title, { body: item.body, icon: "/favicon.svg", tag: `rotau-${item.id}` });
+    for (const item of items.slice(0, 3))
+      new Notification(item.title, { body: item.body, icon: "/favicon.svg", tag: `rotau-${item.id}` });
   }
 
   async askPermission() {

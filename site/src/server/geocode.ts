@@ -6,12 +6,18 @@ import type { Point } from "./route.ts";
 // Região atendida (Sorocaba e cidades vizinhas): resultados fora dela são ignorados
 const REGION = { minLat: -24.2, maxLat: -22.8, minLng: -48.4, maxLng: -46.8 };
 
-type Fetcher = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+type Fetcher = (
+  url: string,
+  init: { headers: Record<string, string>; signal: AbortSignal },
+) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
 export async function geocode(address: string, fetcher: Fetcher = fetch as Fetcher): Promise<Point | null> {
   if (process.env.GEOCODE === "false" || address.trim().length < 5) return null;
   const params = new URLSearchParams({
-    q: `${address}, Brasil`, format: "json", limit: "1", countrycodes: "br",
+    q: `${address}, Brasil`,
+    format: "json",
+    limit: "1",
+    countrycodes: "br",
     viewbox: `${REGION.minLng},${REGION.maxLat},${REGION.maxLng},${REGION.minLat}`,
   });
   try {

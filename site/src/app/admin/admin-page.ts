@@ -3,6 +3,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal, computed } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { ApiRequestError, ApiService, type AdminOverview, type AdminRow } from "../api.service";
+import { formatRating } from "../shared/format";
 
 type TableKey = "colleges" | "students" | "drivers" | "bookings" | "attendance" | "searches";
 
@@ -10,32 +11,80 @@ const tables: { key: TableKey; label: string; columns: [string, string][] }[] = 
   {
     key: "students",
     label: "Estudantes",
-    columns: [["id", "ID"], ["name", "Nome"], ["email", "E-mail"], ["phone", "Celular"], ["address", "Endereço"], ["college", "Faculdade"], ["createdAt", "Cadastro"]],
+    columns: [
+      ["id", "ID"],
+      ["name", "Nome"],
+      ["email", "E-mail"],
+      ["phone", "Celular"],
+      ["address", "Endereço"],
+      ["college", "Faculdade"],
+      ["createdAt", "Cadastro"],
+    ],
   },
   {
     key: "drivers",
     label: "Motoristas",
-    columns: [["id", "ID"], ["name", "Nome"], ["email", "E-mail"], ["phone", "Celular"], ["vanModel", "Van"], ["plate", "Placa"], ["occupied", "Ocupados"], ["capacity", "Lugares"], ["departureTime", "Ida"], ["returnTime", "Volta"], ["rating", "Nota"], ["cities", "Cidades"], ["colleges", "Faculdades"], ["createdAt", "Cadastro"]],
+    columns: [
+      ["id", "ID"],
+      ["name", "Nome"],
+      ["email", "E-mail"],
+      ["phone", "Celular"],
+      ["vanModel", "Van"],
+      ["plate", "Placa"],
+      ["occupied", "Ocupados"],
+      ["capacity", "Lugares"],
+      ["departureTime", "Ida"],
+      ["returnTime", "Volta"],
+      ["rating", "Nota"],
+      ["cities", "Cidades"],
+      ["colleges", "Faculdades"],
+      ["createdAt", "Cadastro"],
+    ],
   },
   {
     key: "bookings",
     label: "Reservas",
-    columns: [["id", "ID"], ["student", "Estudante"], ["driver", "Motorista"], ["pickup", "Embarque"], ["pickupTime", "Horário"], ["status", "Status"], ["createdAt", "Criada em"]],
+    columns: [
+      ["id", "ID"],
+      ["student", "Estudante"],
+      ["driver", "Motorista"],
+      ["pickup", "Embarque"],
+      ["pickupTime", "Horário"],
+      ["status", "Status"],
+      ["createdAt", "Criada em"],
+    ],
   },
   {
     key: "attendance",
     label: "Presenças",
-    columns: [["day", "Dia"], ["student", "Estudante"], ["driver", "Motorista"], ["going", "Resposta"], ["createdAt", "Atualizada em"]],
+    columns: [
+      ["day", "Dia"],
+      ["student", "Estudante"],
+      ["driver", "Motorista"],
+      ["going", "Resposta"],
+      ["createdAt", "Atualizada em"],
+    ],
   },
   {
     key: "colleges",
     label: "Faculdades",
-    columns: [["id", "ID"], ["name", "Nome"], ["students", "Estudantes"], ["drivers", "Motoristas"]],
+    columns: [
+      ["id", "ID"],
+      ["name", "Nome"],
+      ["students", "Estudantes"],
+      ["drivers", "Motoristas"],
+    ],
   },
   {
     key: "searches",
     label: "Buscas",
-    columns: [["id", "ID"], ["address", "Endereço"], ["college", "Faculdade"], ["results", "Vans encontradas"], ["createdAt", "Data"]],
+    columns: [
+      ["id", "ID"],
+      ["address", "Endereço"],
+      ["college", "Faculdade"],
+      ["results", "Vans encontradas"],
+      ["createdAt", "Data"],
+    ],
   },
 ];
 
@@ -67,8 +116,14 @@ export default class AdminPage {
   readonly table = computed(() => tables.find((item) => item.key === this.active())!);
   readonly term = computed(() => this.filter().trim().toLowerCase());
   readonly rows = computed(() =>
-    (this.data()?.[this.active()] ?? []).filter((row) =>
-      !this.term() || Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(this.term())),
+    (this.data()?.[this.active()] ?? []).filter(
+      (row) =>
+        !this.term() ||
+        Object.values(row).some((value) =>
+          String(value ?? "")
+            .toLowerCase()
+            .includes(this.term()),
+        ),
     ),
   );
 
@@ -79,7 +134,8 @@ export default class AdminPage {
   load() {
     this.loading.set(true);
     this.error.set(null);
-    this.api.adminOverview()
+    this.api
+      .adminOverview()
       .then((overview) => {
         this.data.set(overview);
         this.needsLogin.set(false);
@@ -123,7 +179,7 @@ export default class AdminPage {
       const date = new Date(value.replace(" ", "T") + "Z");
       return Number.isNaN(date.getTime()) ? value : date.toLocaleString("pt-BR");
     }
-    if (column === "rating" && typeof value === "number") return value.toFixed(1).replace(".", ",");
+    if (column === "rating" && typeof value === "number") return formatRating(value);
     return String(value);
   }
 

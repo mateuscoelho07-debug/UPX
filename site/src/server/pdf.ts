@@ -13,21 +13,30 @@ const BODY_SIZE = 10.5;
 
 // Larguras da Helvetica (por mil de corpo) para os caracteres ASCII 32 a 126
 const WIDTHS = [
-  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
-  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
-  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
-  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556,
+  556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833,
+  722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556,
+  556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334,
+  260, 334, 584,
 ];
 
 // Caracteres fora do Latin-1 que existem no WinAnsi (código do PDF)
-const WIN_ANSI_EXTRA: Record<string, number> = { "•": 0x95, "–": 0x96, "—": 0x97, "‘": 0x91, "’": 0x92, "“": 0x93, "”": 0x94, "…": 0x85 };
+const WIN_ANSI_EXTRA: Record<string, number> = {
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "…": 0x85,
+};
 
 function charWidth(char: string, bold: boolean): number {
   const base = char.normalize("NFD")[0]!;
   const code = base.charCodeAt(0);
-  const width = code >= 32 && code <= 126 ? WIDTHS[code - 32]! : char in WIN_ANSI_EXTRA ? (char === "•" ? 350 : 556) : 556;
+  const width =
+    code >= 32 && code <= 126 ? WIDTHS[code - 32]! : char in WIN_ANSI_EXTRA ? (char === "•" ? 350 : 556) : 556;
   return bold ? width * 1.07 : width;
 }
 
@@ -101,22 +110,46 @@ export function buildPdf(blocks: PdfBlock[], footer: string, title: string): Buf
         y = PAGE_HEIGHT - MARGIN;
       }
     } else if (block.kind === "title") {
-      place(wrap(block.text, 20, true, PAGE_WIDTH - 2 * MARGIN), { x: MARGIN, size: 20, bold: true, gap: 6, before: 0 });
+      place(wrap(block.text, 20, true, PAGE_WIDTH - 2 * MARGIN), {
+        x: MARGIN,
+        size: 20,
+        bold: true,
+        gap: 6,
+        before: 0,
+      });
     } else if (block.kind === "heading") {
       // título de seção nunca fica sozinho no fim da página
       if (y - 70 < bottom) {
         pages.push([]);
         y = PAGE_HEIGHT - MARGIN;
       }
-      place(wrap(block.text, 13, true, PAGE_WIDTH - 2 * MARGIN), { x: MARGIN, size: 13, bold: true, gap: 4, before: 10 });
+      place(wrap(block.text, 13, true, PAGE_WIDTH - 2 * MARGIN), {
+        x: MARGIN,
+        size: 13,
+        bold: true,
+        gap: 4,
+        before: 10,
+      });
     } else if (block.kind === "label") {
-      place(wrap(block.text, BODY_SIZE, true, PAGE_WIDTH - 2 * MARGIN), { x: MARGIN, size: BODY_SIZE, bold: true, gap: 2, before: 0 });
+      place(wrap(block.text, BODY_SIZE, true, PAGE_WIDTH - 2 * MARGIN), {
+        x: MARGIN,
+        size: BODY_SIZE,
+        bold: true,
+        gap: 2,
+        before: 0,
+      });
     } else if (block.kind === "bullet") {
       const lines = wrap(block.text, BODY_SIZE, false, PAGE_WIDTH - 2 * MARGIN - 16);
       const first = place(lines, { x: MARGIN + 16, size: BODY_SIZE, bold: false, gap: 3, before: 0 });
       first?.page.push({ x: MARGIN + 3, y: first.y, size: BODY_SIZE, bold: false, text: "•" });
     } else {
-      place(wrap(block.text, BODY_SIZE, false, PAGE_WIDTH - 2 * MARGIN), { x: MARGIN, size: BODY_SIZE, bold: false, gap: 5, before: 0 });
+      place(wrap(block.text, BODY_SIZE, false, PAGE_WIDTH - 2 * MARGIN), {
+        x: MARGIN,
+        size: BODY_SIZE,
+        bold: false,
+        gap: 5,
+        before: 0,
+      });
     }
   }
 
@@ -134,7 +167,10 @@ export function buildPdf(blocks: PdfBlock[], footer: string, title: string): Buf
     const footerText = `${footer}  |  Página ${index + 1} de ${pages.length}`;
     const all: Placed[] = [...page, { x: MARGIN, y: MARGIN - 8, size: 8.5, bold: false, text: footerText }];
     const content = all
-      .map((p) => `BT /${p.bold ? "F2" : "F1"} ${p.size} Tf ${p.x.toFixed(2)} ${p.y.toFixed(2)} Td (${pdfString(p.text)}) Tj ET`)
+      .map(
+        (p) =>
+          `BT /${p.bold ? "F2" : "F1"} ${p.size} Tf ${p.x.toFixed(2)} ${p.y.toFixed(2)} Td (${pdfString(p.text)}) Tj ET`,
+      )
       .join("\n");
     objects[pageNumber] =
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${pageNumber + 1} 0 R >>`;

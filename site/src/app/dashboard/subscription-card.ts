@@ -16,19 +16,29 @@ import { Icon } from "../shared/icon";
         aria-label="Assinatura do motorista"
       >
         <div>
-          <span class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider" [class]="subscription().active ? 'text-emerald-700' : 'text-amber-700'">
+          <span
+            class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider"
+            [class]="subscription().active ? 'text-emerald-700' : 'text-amber-700'"
+          >
             <app-icon name="check" class="size-4" /> Assinatura do motorista
           </span>
           @if (subscription().active) {
             <h2 class="mt-2 text-lg font-extrabold text-slate-950">Assinatura em dia até {{ until() }}</h2>
             <p class="mt-1 text-sm text-slate-600">{{ remaining() }} Sua van aparece para os alunos se candidatarem.</p>
           } @else {
-            <h2 class="mt-2 text-lg font-extrabold text-slate-950">{{ subscription().until ? "Sua assinatura venceu em " + until() : "Assine para liberar sua van" }}</h2>
-            <p class="mt-1 text-sm text-slate-700">Enquanto a assinatura não estiver em dia, sua van fica <strong>oculta para novos alunos</strong>. Quem já reservou continua na sua lista.</p>
+            <h2 class="mt-2 text-lg font-extrabold text-slate-950">
+              {{ subscription().until ? "Sua assinatura venceu em " + until() : "Assine para liberar sua van" }}
+            </h2>
+            <p class="mt-1 text-sm text-slate-700">
+              Enquanto a assinatura não estiver em dia, sua van fica <strong>oculta para novos alunos</strong>. Quem já
+              reservou continua na sua lista.
+            </p>
           }
           <p class="mt-2 text-xs text-slate-500">
             {{ price() }} a cada {{ subscription().days }} dias.
-            @if (subscription().simulated) { Pagamento simulado: nenhuma cobrança real é feita por enquanto. }
+            @if (subscription().simulated) {
+              Pagamento simulado: nenhuma cobrança real é feita por enquanto.
+            }
           </p>
           @if (error()) {
             <p class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{{ error() }}</p>

@@ -1,3 +1,4 @@
+// Testes do cálculo de rota (ordem das paradas, tempos e distâncias).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { approximatePoint, collegePoint, placePoint } from "./places.ts";
@@ -31,8 +32,14 @@ test("ordena as paradas pelo caminho mais curto e soma o tempo parado", () => {
     { id: 2, point: { lat: 0, lng: 0.06 } },
   ];
   const plan = planRoute(origin, stops);
-  assert.deepEqual(plan.stops.map((s) => s.id), [1, 2, 3]);
-  assert.deepEqual(plan.stops.map((s) => s.order), [1, 2, 3]);
+  assert.deepEqual(
+    plan.stops.map((s) => s.id),
+    [1, 2, 3],
+  );
+  assert.deepEqual(
+    plan.stops.map((s) => s.order),
+    [1, 2, 3],
+  );
   const leg = travelMinutes(origin, stops[1]!.point);
   assert.equal(plan.stops[0]!.minutes, Math.round(leg));
   assert.equal(plan.stops[1]!.minutes, Math.round(leg * 2 + STOP_MINUTES));
@@ -44,9 +51,22 @@ test("ordena as paradas pelo caminho mais curto e soma o tempo parado", () => {
 test("na ida a rota termina na faculdade; o último ponto é o mais perto dela", () => {
   const college = { lat: 0, lng: 0.1 };
   const origin = { lat: 0, lng: 0 };
-  const plan = planRoute(origin, [{ id: 1, point: { lat: 0, lng: 0.08 } }, { id: 2, point: { lat: 0, lng: 0.02 } }], college);
-  assert.deepEqual(plan.stops.map((s) => s.id), [2, 1]);
-  const semFaculdade = planRoute(origin, [{ id: 1, point: { lat: 0, lng: 0.08 } }, { id: 2, point: { lat: 0, lng: 0.02 } }]);
+  const plan = planRoute(
+    origin,
+    [
+      { id: 1, point: { lat: 0, lng: 0.08 } },
+      { id: 2, point: { lat: 0, lng: 0.02 } },
+    ],
+    college,
+  );
+  assert.deepEqual(
+    plan.stops.map((s) => s.id),
+    [2, 1],
+  );
+  const semFaculdade = planRoute(origin, [
+    { id: 1, point: { lat: 0, lng: 0.08 } },
+    { id: 2, point: { lat: 0, lng: 0.02 } },
+  ]);
   assert.ok(plan.totalMinutes > semFaculdade.totalMinutes);
 });
 
@@ -61,19 +81,35 @@ test("o 2-opt desfaz cruzamentos que o vizinho mais próximo deixa", () => {
   const plan = planRoute(origin, points);
   // nenhuma ordem possível é mais curta que a escolhida
   const permutations = (list: typeof points): (typeof points)[] =>
-    list.length <= 1 ? [list] : list.flatMap((item, i) => permutations([...list.slice(0, i), ...list.slice(i + 1)]).map((rest) => [item, ...rest]));
+    list.length <= 1
+      ? [list]
+      : list.flatMap((item, i) =>
+          permutations([...list.slice(0, i), ...list.slice(i + 1)]).map((rest) => [item, ...rest]),
+        );
   const chosen = plan.stops.map((s) => points.find((p) => p.id === s.id)!);
   for (const order of permutations(points)) {
     // planRoute reordena, então compara o trajeto na ordem escolhida, calculado à mão
-    const km = [origin, ...order.map((p) => p.point)].reduce((total, p, i, all) => (i === 0 ? 0 : total + roadKm(all[i - 1]!, p)), 0);
-    const best = [origin, ...chosen.map((p) => p.point)].reduce((total, p, i, all) => (i === 0 ? 0 : total + roadKm(all[i - 1]!, p)), 0);
+    const km = [origin, ...order.map((p) => p.point)].reduce(
+      (total, p, i, all) => (i === 0 ? 0 : total + roadKm(all[i - 1]!, p)),
+      0,
+    );
+    const best = [origin, ...chosen.map((p) => p.point)].reduce(
+      (total, p, i, all) => (i === 0 ? 0 : total + roadKm(all[i - 1]!, p)),
+      0,
+    );
     assert.ok(best <= km + 1e-9);
   }
 });
 
 test("endereço sem localização usa um tempo padrão e vai para o fim da rota", () => {
-  const plan = planRoute({ lat: 0, lng: 0 }, [{ id: 1, point: null }, { id: 2, point: { lat: 0, lng: 0.03 } }]);
-  assert.deepEqual(plan.stops.map((s) => s.id), [2, 1]);
+  const plan = planRoute({ lat: 0, lng: 0 }, [
+    { id: 1, point: null },
+    { id: 2, point: { lat: 0, lng: 0.03 } },
+  ]);
+  assert.deepEqual(
+    plan.stops.map((s) => s.id),
+    [2, 1],
+  );
   assert.equal(plan.stops[1]!.minutes, plan.stops[0]!.minutes + STOP_MINUTES + 6);
   const semOrigem = planRoute(null, [{ id: 1, point: { lat: 0, lng: 0 } }]);
   assert.equal(semOrigem.stops[0]!.minutes, 6);
@@ -102,11 +138,21 @@ test("horário mais minutos, inclusive passando da meia-noite", () => {
 
 test("geocode: usa o resultado dentro da região e ignora o resto", async () => {
   const { geocode } = await import("./geocode.ts");
-  const answer = (body: unknown, ok = true) => async () => ({ ok, json: async () => body });
-  assert.deepEqual(await geocode("Rua A, 10 - Sorocaba", answer([{ lat: "-23.49", lon: "-47.43" }])), { lat: -23.49, lng: -47.43 });
+  const answer =
+    (body: unknown, ok = true) =>
+    async () => ({ ok, json: async () => body });
+  assert.deepEqual(await geocode("Rua A, 10 - Sorocaba", answer([{ lat: "-23.49", lon: "-47.43" }])), {
+    lat: -23.49,
+    lng: -47.43,
+  });
   assert.equal(await geocode("Rua A, 10 - Curitiba", answer([{ lat: "-25.43", lon: "-49.27" }])), null); // fora da região
   assert.equal(await geocode("Rua sem resultado, 1", answer([])), null);
   assert.equal(await geocode("Rua A, 10 - Sorocaba", answer([], false)), null);
-  assert.equal(await geocode("Rua A, 10 - Sorocaba", async () => { throw new Error("sem rede"); }), null);
+  assert.equal(
+    await geocode("Rua A, 10 - Sorocaba", async () => {
+      throw new Error("sem rede");
+    }),
+    null,
+  );
   assert.equal(await geocode("abc", answer([{ lat: "-23.49", lon: "-47.43" }])), null); // endereço curto demais
 });

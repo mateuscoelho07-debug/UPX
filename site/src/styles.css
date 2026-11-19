@@ -130,11 +130,20 @@ button {
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .route-orbit { animation: none; }
+  html {
+    scroll-behavior: auto;
+  }
+  .route-orbit {
+    animation: none;
+  }
 }

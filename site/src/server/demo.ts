@@ -21,9 +21,9 @@ export const demoStudents: Record<string, DemoStudent[]> = {
   ],
   sul: [
     ["Karen Queiroz", "Av. São Paulo, 741 - Zona Sul (Sorocaba)", -23.5472, -47.4675, "PUC-SP"],
-    ["Leonardo Almeida", "Rua Marechal Deodoro, 299 - Campolim", -23.5350, -47.4879, "Fatec"],
+    ["Leonardo Almeida", "Rua Marechal Deodoro, 299 - Campolim", -23.535, -47.4879, "Fatec"],
     ["Marcela Ibrahim", "Av. Dom Pedro I, 876 - Jd. Europa", -23.5245, -47.4699, "IFSP"],
-    ["Nicolas Rocha", "Rua Sete de Setembro, 218 - Campolim", -23.5340, -47.4820, "UniFacens"],
+    ["Nicolas Rocha", "Rua Sete de Setembro, 218 - Campolim", -23.534, -47.482, "UniFacens"],
     ["Otávio Barbosa", "Rua Santa Rita, 740 - Jd. Europa", -23.5271, -47.4734, "Unesp"],
   ],
   leste: [
@@ -42,20 +42,20 @@ export const demoStudents: Record<string, DemoStudent[]> = {
   ],
   votorantim: [
     ["Natália Vieira", "Rua do Comércio, 507 - Votorantim", -23.5474, -47.4376, "Unesp"],
-    ["Vitor Gomes", "Rua Minas Gerais, 604 - Votorantim", -23.5499, -47.4380, "Fadi"],
+    ["Vitor Gomes", "Rua Minas Gerais, 604 - Votorantim", -23.5499, -47.438, "Fadi"],
     ["Letícia Pacheco", "Rua dos Ipês, 859 - Salto de Pirapora", -23.6517, -47.5728, "Unip"],
     ["Renan Xavier", "Rua das Palmeiras, 817 - Piedade", -23.7113, -47.4353, "ESAMC"],
     ["Bianca Heitor", "Rua dos Jasmins, 583 - Pilar do Sul", -23.8073, -47.7202, "Uniso"],
   ],
   itu: [
-    ["Aline Queiroz", "Av. São Paulo, 728 - Itu", -23.2610, -47.3028, "Anhanguera"],
-    ["Bruno Almeida", "Rua Marechal Deodoro, 717 - Salto", -23.1921, -47.2870, "ESAMC"],
+    ["Aline Queiroz", "Av. São Paulo, 728 - Itu", -23.261, -47.3028, "Anhanguera"],
+    ["Bruno Almeida", "Rua Marechal Deodoro, 717 - Salto", -23.1921, -47.287, "ESAMC"],
     ["Camila Ibrahim", "Av. Dom Pedro I, 187 - Itu", -23.2629, -47.2965, "Fadi"],
     ["Diego Rocha", "Rua Sete de Setembro, 778 - Salto", -23.1988, -47.2838, "UniFacens"],
     ["Eduarda Barbosa", "Rua Santa Rita, 95 - Itu", -23.2571, -47.3059, "Fatec"],
   ],
   portofeliz: [
-    ["Felipe Junqueira", "Av. Independência, 234 - Porto Feliz", -23.2149, -47.5190, "UniFacens"],
+    ["Felipe Junqueira", "Av. Independência, 234 - Porto Feliz", -23.2149, -47.519, "UniFacens"],
     ["Gabriela Santana", "Rua Bela Vista, 292 - Boituva", -23.2795, -47.6828, "Unesp"],
     ["Henrique Cardoso", "Rua das Orquídeas, 728 - Cerquilho", -23.1679, -47.7467, "Fadi"],
     ["Isabela Lopes", "Rua das Laranjeiras, 27 - Tietê", -23.1129, -47.7134, "Unip"],
@@ -69,10 +69,10 @@ export const demoStudents: Record<string, DemoStudent[]> = {
     ["Otávio Nascimento", "Rua São João, 620 - Tatuí", -23.3615, -47.8553, "Fatec"],
   ],
   itapetininga: [
-    ["Patrícia Vieira", "Rua do Comércio, 207 - Itapetininga", -23.5889, -48.0540, "IFSP"],
+    ["Patrícia Vieira", "Rua do Comércio, 207 - Itapetininga", -23.5889, -48.054, "IFSP"],
     ["Rafael Gomes", "Rua Minas Gerais, 302 - Alambari", -23.5487, -47.9023, "UniFacens"],
-    ["Sabrina Pacheco", "Rua dos Ipês, 351 - Sarapuí", -23.6430, -47.8288, "Unesp"],
-    ["Thiago Xavier", "Rua das Palmeiras, 124 - Itapetininga", -23.5910, -48.0456, "Fadi"],
+    ["Sabrina Pacheco", "Rua dos Ipês, 351 - Sarapuí", -23.643, -47.8288, "Unesp"],
+    ["Thiago Xavier", "Rua das Palmeiras, 124 - Itapetininga", -23.591, -48.0456, "Fadi"],
     ["Vanessa Heitor", "Rua dos Jasmins, 636 - Alambari", -23.5514, -47.8948, "Unip"],
   ],
   saoroque: [
@@ -82,7 +82,6 @@ export const demoStudents: Record<string, DemoStudent[]> = {
     ["Larissa Rocha", "Rua Sete de Setembro, 363 - São Roque", -23.5357, -47.1434, "ESAMC"],
     ["Murilo Barbosa", "Rua Santa Rita, 127 - Mairinque", -23.5471, -47.1801, "Fadi"],
   ],
-
 };
 
 // Alunos "coringa": vão todo dia e ficam na van de motoristas reais escolhidos (ver CORINGA_DRIVERS em db.ts),

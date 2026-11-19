@@ -11,7 +11,9 @@ const MAX_BYTES = 2 * 1024 * 1024;
   template: `
     <section class="mt-8 rounded-3xl border border-slate-200 bg-white p-6" aria-label="Documentos do veículo">
       <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Documentos do veículo</span>
-      <h2 class="mt-2 text-lg font-extrabold text-slate-950">{{ allSent() ? "Documentos enviados" : "Envie a CNH e o CRLV" }}</h2>
+      <h2 class="mt-2 text-lg font-extrabold text-slate-950">
+        {{ allSent() ? "Documentos enviados" : "Envie a CNH e o CRLV" }}
+      </h2>
       <p class="mt-1 text-sm text-slate-600">
         JPG, PNG ou PDF, até 2 MB cada. Só você abre os arquivos; os alunos veem apenas o aviso "documentos enviados".
       </p>
@@ -20,7 +22,9 @@ const MAX_BYTES = 2 * 1024 * 1024;
           <li class="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <strong class="text-slate-950">{{ item.label }}</strong>
-              <span class="ml-2 text-xs font-bold" [class]="sent(item.kind) ? 'text-emerald-700' : 'text-amber-700'">{{ sent(item.kind) ? "Enviado" : "Pendente" }}</span>
+              <span class="ml-2 text-xs font-bold" [class]="sent(item.kind) ? 'text-emerald-700' : 'text-amber-700'">{{
+                sent(item.kind) ? "Enviado" : "Pendente"
+              }}</span>
               <p class="text-sm text-slate-500">{{ item.hint }}</p>
               @if (sent(item.kind); as file) {
                 <p class="mt-1 text-sm text-slate-700">{{ file.filename }} · {{ size(file) }}</p>
@@ -29,11 +33,28 @@ const MAX_BYTES = 2 * 1024 * 1024;
             <div class="flex flex-wrap items-center gap-3 text-sm">
               <label class="btn-secondary cursor-pointer !px-4 !py-2" [class.opacity-50]="busy()">
                 {{ sent(item.kind) ? "Trocar arquivo" : "Escolher arquivo" }}
-                <input class="sr-only" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" [disabled]="busy()" (change)="pick(item.kind, $event)" />
+                <input
+                  class="sr-only"
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+                  [disabled]="busy()"
+                  (change)="pick(item.kind, $event)"
+                />
               </label>
               @if (sent(item.kind)) {
-                <a class="font-semibold text-blue-700 underline" [href]="'/api/drivers/' + driverId() + '/documents/' + item.kind + '/file'">Baixar</a>
-                <button class="font-semibold text-slate-500 underline hover:text-red-700" type="button" [disabled]="busy()" (click)="remove(item.kind)">Remover</button>
+                <a
+                  class="font-semibold text-blue-700 underline"
+                  [href]="'/api/drivers/' + driverId() + '/documents/' + item.kind + '/file'"
+                  >Baixar</a
+                >
+                <button
+                  class="font-semibold text-slate-500 underline hover:text-red-700"
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="remove(item.kind)"
+                >
+                  Remover
+                </button>
               }
             </div>
           </li>
@@ -68,7 +89,9 @@ export class DocumentsCard {
   }
 
   size(doc: DriverDocument) {
-    return doc.size >= 1024 * 1024 ? `${(doc.size / 1024 / 1024).toFixed(1).replace(".", ",")} MB` : `${Math.max(Math.round(doc.size / 1024), 1)} KB`;
+    return doc.size >= 1024 * 1024
+      ? `${(doc.size / 1024 / 1024).toFixed(1).replace(".", ",")} MB`
+      : `${Math.max(Math.round(doc.size / 1024), 1)} KB`;
   }
 
   async pick(kind: DocumentKind, event: Event) {

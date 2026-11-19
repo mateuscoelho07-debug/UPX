@@ -1,13 +1,21 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, input, output, signal } from "@angular/core";
-import { ApiRequestError, ApiService, type BookingStatus, type DriverDashboardData, type Leg, type Passenger } from "../api.service";
+import {
+  ApiRequestError,
+  ApiService,
+  type BookingStatus,
+  type DriverDashboardData,
+  type Leg,
+  type Passenger,
+} from "../api.service";
+import { firstName } from "../shared/format";
 import { Icon } from "../shared/icon";
 import { DashboardHeader } from "./dashboard-header";
 import { DeleteAccount } from "./delete-account";
-import { SubscriptionCard } from "./subscription-card";
 import { DocumentsCard } from "./documents-card";
-import { TermsCard } from "./terms-card";
 import { POLL_MS } from "./notification-bell";
 import { StatusMessage } from "./status-message";
+import { SubscriptionCard } from "./subscription-card";
+import { TermsCard } from "./terms-card";
 
 // Painel do motorista: quem vai hoje, rota do dia e botões para iniciar a ida e a volta
 @Component({
@@ -42,22 +50,29 @@ export class DriverDashboard implements OnInit {
   load() {
     this.loading.set(true);
     this.error.set(null);
-    this.api.driverDashboard(this.driverId())
+    this.api
+      .driverDashboard(this.driverId())
       .then((data) => this.data.set(data))
       .catch((err: Error) => this.handleError(err))
       .finally(() => this.loading.set(false));
   }
 
   refresh() {
-    this.api.driverDashboard(this.driverId()).then((data) => this.data.set(data), () => {});
+    this.api.driverDashboard(this.driverId()).then(
+      (data) => this.data.set(data),
+      () => {},
+    );
   }
 
-  firstName(name: string) {
-    return name.split(" ")[0];
-  }
+  readonly firstName = firstName;
 
   initials(name: string) {
-    return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]!.toUpperCase())
+      .join("");
   }
 
   async setStatus(passenger: Passenger, status: BookingStatus) {

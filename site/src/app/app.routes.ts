@@ -1,3 +1,4 @@
+// Rotas do site. Cada página é carregada sob demanda (lazy loading) para deixar o primeiro carregamento leve.
 import { Routes } from "@angular/router";
 
 export const routes: Routes = [

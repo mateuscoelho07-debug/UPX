@@ -1,3 +1,4 @@
+// Mensagem padrão de "Carregando..." ou de erro com botão "Tentar de novo" dos painéis.
 import { ChangeDetectionStrategy, Component, input, output } from "@angular/core";
 
 @Component({

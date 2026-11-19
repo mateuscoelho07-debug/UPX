@@ -1,0 +1,4 @@
+{
+  "printWidth": 120,
+  "overrides": [{ "files": "src/app/**/*.html", "options": { "parser": "angular" } }]
+}

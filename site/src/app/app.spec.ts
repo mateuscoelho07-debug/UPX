@@ -1,3 +1,4 @@
+// Testes das telas Angular (Vitest + jsdom), com a API simulada.
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { provideHttpClient } from "@angular/common/http";
 import { HttpTestingController, provideHttpClientTesting } from "@angular/common/http/testing";
@@ -15,7 +16,16 @@ const day = {
   day: "2026-10-23",
   weekday: "Sexta-feira",
   going: null,
-  van: { driverId: 1, driver: "Carlos", phone: "1", vehicle: "Van", pickup: "Centro", pickupTime: "06:40", status: "Confirmado", goingCount: 1 },
+  van: {
+    driverId: 1,
+    driver: "Carlos",
+    phone: "1",
+    vehicle: "Van",
+    pickup: "Centro",
+    pickupTime: "06:40",
+    status: "Confirmado",
+    goingCount: 1,
+  },
   legs: [
     { leg: "ida", scheduled: "06:30", startedAt: null, eta: null, predicted: false },
     { leg: "volta", scheduled: "22:40", startedAt: null, eta: null, predicted: false },
@@ -45,21 +55,33 @@ describe("ApiService", () => {
   it("traduz erros da API em ApiRequestError com o status", async () => {
     const http = TestBed.inject(HttpTestingController);
     const pending = TestBed.inject(ApiService).me();
-    http.expectOne("/api/auth/me").flush({ error: "Você não está logado." }, { status: 401, statusText: "Unauthorized" });
+    http
+      .expectOne("/api/auth/me")
+      .flush({ error: "Você não está logado." }, { status: 401, statusText: "Unauthorized" });
     await expect(pending).rejects.toMatchObject({ status: 401, message: "Você não está logado." });
     await expect(pending).rejects.toBeInstanceOf(ApiRequestError);
   });
 });
 
 describe("StudentDashboard", () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
 
   it("mostra Vou hoje / Não vou hoje e a presença confirmada", async () => {
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(StudentDashboard);
     fixture.componentRef.setInput("studentId", 7);
     fixture.detectChanges();
-    http.expectOne("/api/students/7").flush({ id: 7, name: "Ana Souza", phone: "1", email: "a@a", address: "Centro", collegeId: 1, college: "Facens" });
+    http.expectOne("/api/students/7").flush({
+      id: 7,
+      name: "Ana Souza",
+      phone: "1",
+      email: "a@a",
+      address: "Centro",
+      collegeId: 1,
+      college: "Facens",
+    });
     http.expectOne("/api/vans").flush([]);
     http.expectOne("/api/attendance/today").flush(day);
     await settle(fixture);
@@ -80,12 +102,29 @@ describe("StudentDashboard", () => {
 });
 
 describe("VanDetailPage", () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
 
   const detail = {
-    id: 3, driver: "Carlos", vehicle: "Master • 12 lugares", plate: "ABC-1D23", phone: null, route: "Centro → Facens",
-    cities: ["Centro", "Zona Norte"], colleges: ["Facens"], time: "06:30", returnTime: "22:40", capacity: 12, freeSeats: 4,
-    rating: 4.9, booked: false, documentsSent: true, bookingId: null, bookingStatus: null, current: null,
+    id: 3,
+    driver: "Carlos",
+    vehicle: "Master • 12 lugares",
+    plate: "ABC-1D23",
+    phone: null,
+    route: "Centro → Facens",
+    cities: ["Centro", "Zona Norte"],
+    colleges: ["Facens"],
+    time: "06:30",
+    returnTime: "22:40",
+    capacity: 12,
+    freeSeats: 4,
+    rating: 4.9,
+    booked: false,
+    documentsSent: true,
+    bookingId: null,
+    bookingStatus: null,
+    current: null,
   };
 
   function open(van: object) {
@@ -117,14 +156,24 @@ describe("VanDetailPage", () => {
     expect(req.request.body).toEqual({ driverId: 3, replace: true });
     req.flush({ id: 1, status: "Aguardando" });
     await settle(fixture);
-    http.match("/api/vans/3").forEach((r) => r.flush({ ...detail, booked: true, bookingId: 1, bookingStatus: "Aguardando", phone: "(15) 90000-0000" }));
+    http
+      .match("/api/vans/3")
+      .forEach((r) =>
+        r.flush({ ...detail, booked: true, bookingId: 1, bookingStatus: "Aguardando", phone: "(15) 90000-0000" }),
+      );
     http.match("/api/attendance/today").forEach((r) => r.flush(day));
     fixture.destroy();
   });
 
   it("na van reservada confirma Vou hoje", async () => {
     const { http, fixture } = open(detail);
-    await load(fixture, http, { ...detail, booked: true, bookingId: 1, bookingStatus: "Confirmado", phone: "(15) 90000-0000" });
+    await load(fixture, http, {
+      ...detail,
+      booked: true,
+      bookingId: 1,
+      bookingStatus: "Confirmado",
+      phone: "(15) 90000-0000",
+    });
     const el: HTMLElement = fixture.nativeElement;
     expect(el.textContent).toContain("Você vai hoje?");
     expect(el.textContent).toContain("(15) 90000-0000");
@@ -253,7 +302,9 @@ describe("DocumentsCard", () => {
 });
 
 describe("TermsCard", () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
 
   function open(terms: object) {
     const fixture = TestBed.createComponent(TermsCard);
@@ -286,15 +337,39 @@ describe("TermsCard", () => {
 });
 
 describe("DriverDashboard", () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }));
+  beforeEach(() =>
+    TestBed.configureTestingModule({ providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()] }),
+  );
 
-  const route = { destination: "Fatec", totalMinutes: 20, distanceKm: 8, arrival: "18:10",
-    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A", order: 1, eta: "17:50" }] };
+  const route = {
+    destination: "Fatec",
+    totalMinutes: 20,
+    distanceKm: 8,
+    arrival: "18:10",
+    stops: [{ studentId: 1, name: "Ana", pickup: "Rua A", order: 1, eta: "17:50" }],
+  };
   const leg = (name: string) => ({ leg: name, scheduled: "17:30", startedAt: null, eta: null, predicted: true, route });
   const dashboard = {
-    driver: { id: 5, name: "Carlos", freeSeats: 3, occupied: 1, capacity: 4, departureTime: "17:30", cities: ["Sorocaba"], colleges: ["Fatec"] },
-    passengers: [], mainDestination: "Fatec",
-    today: { day: "2026-10-24", weekday: "Sábado", going: 1, notGoing: 0, pending: 0, legs: [leg("ida"), leg("volta")] },
+    driver: {
+      id: 5,
+      name: "Carlos",
+      freeSeats: 3,
+      occupied: 1,
+      capacity: 4,
+      departureTime: "17:30",
+      cities: ["Sorocaba"],
+      colleges: ["Fatec"],
+    },
+    passengers: [],
+    mainDestination: "Fatec",
+    today: {
+      day: "2026-10-24",
+      weekday: "Sábado",
+      going: 1,
+      notGoing: 0,
+      pending: 0,
+      legs: [leg("ida"), leg("volta")],
+    },
     subscription: { enabled: false, price: 29.9, days: 30, simulated: true, until: null, active: true, daysLeft: null },
     documents: [],
     terms: { version: "1.0", acceptedVersion: null, acceptedAt: null, accepted: false },
